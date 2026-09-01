@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+   <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+   <link rel="shortcut icon" href="/favicon.ico" />
+   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+   <link rel="manifest" href="/site.webmanifest" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ICTU</title>
+
+    <!-- Font theo design.md § Typography: Manrope (display) + Inter (body). preconnect
+         trước để giảm độ trễ tải font, display=swap để không chặn hiển thị chữ khi chờ font. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --font-display: "Manrope", sans-serif;
+        --font-body: "Inter", sans-serif;
+      }
+      /* Đồng bộ font-body làm mặc định toàn trang — App.jsx/Login.jsx đang dùng class
+         Tailwind "font-sans"; khai báo lại font-family mặc định của trình duyệt ở đây
+         để không phải sửa tailwind.config. */
+      body {
+        font-family: var(--font-body);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
