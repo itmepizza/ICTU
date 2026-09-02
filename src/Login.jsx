@@ -276,7 +276,7 @@ export default function Login({ errorMessage, isDark, setIsDark }) {
             </div>
           </div>
 
-          <h2 style={{ fontFamily: 'var(--font-display), sans-serif' }} className={`font-extrabold tracking-tight text-2xl mb-5 transition-colors duration-500 ${theme.title}`}>
+          <h2 style={{ fontFamily: 'var(--font-display), sans-serif', marginBottom: '24px' }} className={`font-extrabold tracking-tight text-2xl transition-colors duration-500 ${theme.title}`}>
             {mode === 'login' && 'Đăng Nhập'}
             {mode === 'register' && 'Đăng Ký'}
             {mode === 'forgot' && 'Quên Mật Khẩu'}
