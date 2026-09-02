@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, X, Phone, Mail, Building2, Users, Shield, HeartPulse, UserCircle2 } from 'lucide-react';
 import './styles.css';
 import img001 from './assets/img_001_0a06ca0618.png';
 import img002 from './assets/img_002_1163d01d65.jpg';
@@ -21,6 +21,7 @@ import img012 from './assets/img_012_cd4e143850.jpg';
 // trong hệ thống đều là CÙNG 1 trạng thái, không lệch nhau.
 export default function ICTULandingPage({ onEnterSystem, isDark, setIsDark }) {
   const [navOpen, setNavOpen] = useState(false);
+  const [contactSection, setContactSection] = useState(null);
   const navRef = useRef(null);
   const heroPhotoRef = useRef(null);
   const rootRef = useRef(null);
@@ -119,26 +120,11 @@ export default function ICTULandingPage({ onEnterSystem, isDark, setIsDark }) {
       );
     });
 
-    // ---- Hero photo parallax ----
-    let heroTween;
-    if (heroPhotoRef.current) {
-      heroTween = gsap.to(heroPhotoRef.current, {
-        yPercent: 12,
-        ease: 'none',
-        scrollTrigger: {
-          trigger: '.hero-poster',
-          start: 'top top',
-          end: 'bottom top',
-          scrub: true,
-        },
-      });
-    }
+    // ---- Hero photo: giữ đứng yên, không parallax (user yêu cầu bỏ do giật khi cuộn) ----
 
     // Cleanup on unmount — avoid leaking ScrollTriggers across route/page changes
     return () => {
       triggers.forEach((t) => t.kill());
-      if (heroTween && heroTween.scrollTrigger) heroTween.scrollTrigger.kill();
-      if (heroTween) heroTween.kill();
     };
   }, []);
 
@@ -513,8 +499,8 @@ export default function ICTULandingPage({ onEnterSystem, isDark, setIsDark }) {
 <div className="footer-col">
 <h4>Liên hệ</h4>
 <ul>
-<li><a href="#">Phòng Công tác Sinh viên</a></li>
-<li><a href="#">Ban quản lý KTX</a></li>
+<li><a href="#" onClick={(e) => { e.preventDefault(); setContactSection('PHÒNG CÔNG TÁC HSSV'); }}>Phòng Công tác Sinh viên</a></li>
+<li><a href="#" onClick={(e) => { e.preventDefault(); setContactSection('QUẢN LÝ KÝ TÚC XÁ'); }}>Ban quản lý KTX</a></li>
 </ul>
 </div>
 </div>
@@ -525,8 +511,84 @@ export default function ICTULandingPage({ onEnterSystem, isDark, setIsDark }) {
 </div>
 </footer>
 
+{contactSection && <ContactInfoModal sectionTitle={contactSection} onClose={() => setContactSection(null)} />}
 
+    </div>
+  );
+}
 
+// Section liên hệ đồng bộ đúng số liệu Thông tin liên hệ trong App.jsx (ContactInfoModal, dòng
+// ~868) — không bịa thêm phòng ban/số nào khác, chỉ đổi vỏ Tailwind sang CSS var của landing
+// page (.dark trên <html> đã tự propagate, không cần ternary như bản App.jsx).
+const CONTACT_SECTIONS = [
+  {
+    title: 'PHÒNG QUẢN LÝ CƠ SỞ VẬT CHẤT',
+    icon: <Building2 size={16} />,
+    items: [
+      { icon: <Phone size={14} />, text: '0208.3904 389' },
+      { icon: <Mail size={14} />, text: 'phongqtpv@ictu.edu.vn' },
+    ],
+  },
+  {
+    title: 'PHÒNG CÔNG TÁC HSSV',
+    icon: <Users size={16} />,
+    items: [
+      { icon: <Phone size={14} />, text: '0280 3904365' },
+      { icon: <Mail size={14} />, text: 'phongcthssv@ictu.edu.vn' },
+    ],
+  },
+  {
+    title: 'TỔ BẢO VỆ',
+    icon: <Shield size={16} />,
+    items: [
+      { icon: <UserCircle2 size={14} />, text: 'Tổ trưởng: Nguyễn Mạnh Tuấn' },
+      { icon: <Phone size={14} />, text: '0983 646135' },
+    ],
+  },
+  {
+    title: 'TRẠM Y TẾ',
+    icon: <HeartPulse size={16} />,
+    items: [
+      { icon: <Mail size={14} />, text: 'tramyte@ictu.edu.vn' },
+    ],
+  },
+  {
+    title: 'QUẢN LÝ KÝ TÚC XÁ',
+    icon: <Building2 size={16} />,
+    items: [
+      { icon: <Phone size={14} />, text: '0869 329 188' },
+    ],
+  },
+];
+
+function ContactInfoModal({ sectionTitle, onClose }) {
+  const sections = sectionTitle
+    ? CONTACT_SECTIONS.filter((s) => s.title === sectionTitle)
+    : CONTACT_SECTIONS;
+
+  return (
+    <div className="contact-modal-overlay" onClick={onClose}>
+      <div className="contact-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="contact-modal-head">
+          <img alt="Logo ICTU" src={img001} />
+          <div>
+            <h3>Thông tin liên hệ</h3>
+            <p>Trường ĐH Công nghệ Thông tin và Truyền thông – ĐH Thái Nguyên</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Đóng"><X size={18} /></button>
+        </div>
+
+        <div className="contact-modal-list">
+          {sections.map((sec) => (
+            <div className="contact-modal-section" key={sec.title}>
+              <h4>{sec.icon}{sec.title}</h4>
+              {sec.items.map((it) => (
+                <p key={it.text}>{it.icon}{it.text}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -68,6 +68,9 @@
 
     html {
       overflow-x: clip;
+      /* Luôn chừa chỗ scrollbar dọc — tránh .wrap (margin auto) bị lệch trái/phải vài px mỗi
+       * khi chiều cao trang đổi làm scrollbar bật/tắt (vd sau khi chỉnh padding hero). */
+      scrollbar-gutter: stable;
       /* Motion chạy độc lập với prefers-reduced-motion theo yêu cầu — luôn bật smooth-scroll. */
       scroll-behavior: smooth;
     }
@@ -155,6 +158,19 @@
       background: var(--color-header-bg);
       backdrop-filter: blur(10px);
       border-bottom: 1px solid var(--color-line);
+    }
+
+    /* Header riêng dùng .wrap rộng hơn phần còn lại của trang — kéo logo + menu sát mép trái/phải
+     * hơn ~80px mỗi bên so với --wrap mặc định (1180px), theo yêu cầu. Các section khác vẫn giữ
+     * nguyên --wrap gốc, không đổi bề rộng nội dung toàn trang. */
+    header.site .wrap {
+      max-width: calc(var(--wrap) + 160px);
+    }
+
+    /* Chữ hero (poster-h1 + sub + nút) căn cùng mép trái với logo/menu header vừa nới rộng ở
+     * trên — cùng công thức +160px để 2 khối thẳng hàng dọc. */
+    .hero-poster-inner {
+      max-width: calc(var(--wrap) + 160px);
     }
 
     .nav-row {
@@ -406,9 +422,9 @@
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      justify-content: flex-end;
-      padding-top: 48px;
-      padding-bottom: 40px;
+      justify-content: center;
+      padding-top: 0px;
+      padding-bottom: 50px;
       text-align: left;
     }
 
@@ -1418,3 +1434,142 @@
       }
     }
   
+/* Modal Thông tin liên hệ (footer) — data đồng bộ App.jsx ContactInfoModal.
+ Overlay + card dùng --color-* nên tự đổi theo .dark trên <html>, không cần
+ class riêng cho dark mode như bên App.jsx (Tailwind). */
+.contact-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 27, 38, .55);
+  backdrop-filter: blur(4px);
+}
+
+.dark .contact-modal-overlay {
+  background: rgba(2, 6, 15, .72);
+}
+
+.contact-modal-card {
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card-hover);
+  padding: 22px;
+}
+
+.contact-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.contact-modal-head img {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.contact-modal-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-modal-head h3 {
+  font-family: var(--font-display);
+  font-size: .98rem;
+  font-weight: 800;
+  color: var(--color-ink);
+  line-height: 1.25;
+  margin: 0;
+}
+
+.contact-modal-head p {
+  font-size: .74rem;
+  color: var(--color-ink-soft);
+  margin: 2px 0 0;
+}
+
+.contact-modal-head button {
+  border: none;
+  background: transparent;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 999px;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.contact-modal-head button:hover {
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+}
+
+.contact-modal-main {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.contact-modal-main p,
+.contact-modal-section p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .82rem;
+  color: var(--color-ink-soft);
+  margin: 0;
+}
+
+.contact-modal-main p + p {
+  margin-top: 6px;
+}
+
+.contact-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.contact-modal-section {
+  background: var(--color-paper-2);
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.contact-modal-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: var(--color-brand);
+  margin: 0 0 8px;
+}
+
+.dark .contact-modal-section h4 {
+  color: var(--color-accent);
+}
+
+.contact-modal-section p + p {
+  margin-top: 5px;
+}
+
+.footer-col a[href="#"] {
+  cursor: pointer;
+}
