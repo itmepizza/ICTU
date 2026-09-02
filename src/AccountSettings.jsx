@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { User, Lock, Camera, Loader2, Eye, EyeOff } from 'lucide-react';
+import { User, Lock, Camera, Loader2, Eye, EyeOff, Check } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import ImageCropper from './ImageCropper.jsx';
 
@@ -39,7 +39,7 @@ export default function AccountSettings({ profile, session, isDarkMode, onProfil
           {tab === 'general' && (
             <GeneralTab profile={profile} session={session} isDarkMode={isDarkMode} theme={t} onProfileUpdate={onProfileUpdate} />
           )}
-          {tab === 'password' && <PasswordTab isDarkMode={isDarkMode} theme={t} />}
+          {tab === 'password' && <PasswordTab isDarkMode={isDarkMode} theme={t} session={session} />}
         </div>
       </div>
     </div>
@@ -224,7 +224,38 @@ function Field({ theme, label, value, onChange, placeholder }) {
   );
 }
 
-function PasswordTab({ isDarkMode, theme }) {
+// Cùng bộ tiêu chí mật khẩu với Login.jsx (đăng ký / quên mật khẩu) — giữ đồng nhất
+// trải nghiệm trên toàn app, tick từng tiêu chí theo giá trị đang gõ.
+const PASSWORD_RULES = [
+  { key: 'lower', label: 'chữ thường', test: (v) => /[a-z]/.test(v) },
+  { key: 'upper', label: 'chữ HOA', test: (v) => /[A-Z]/.test(v) },
+  { key: 'digit', label: 'chữ số', test: (v) => /\d/.test(v) },
+  { key: 'symbol', label: 'ký hiệu', test: (v) => /[^A-Za-z0-9]/.test(v) },
+  { key: 'length', label: 'tối thiểu 6 ký tự', test: (v) => v.length >= 6 },
+];
+
+function PasswordRequirements({ value }) {
+  return (
+    <div className="col-span-2 -mt-2 flex flex-wrap gap-1.5">
+      {PASSWORD_RULES.map((rule) => {
+        const met = rule.test(value);
+        return (
+          <span
+            key={rule.key}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors duration-200 ${
+              met ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500' : 'border-transparent text-slate-400'
+            }`}
+          >
+            <Check size={11} strokeWidth={3} className={met ? 'opacity-100' : 'opacity-30'} />
+            {rule.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function PasswordTab({ isDarkMode, theme, session }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [showCurrent, setShowCurrent] = useState(false);
@@ -236,19 +267,43 @@ function PasswordTab({ isDarkMode, theme }) {
   const handleUpdate = async () => {
     setError('');
     setNotice('');
-    if (newPassword.length < 6) {
-      setError('Mật khẩu mới phải có ít nhất 6 ký tự.');
+    if (!currentPassword) {
+      setError('Vui lòng nhập mật khẩu hiện tại.');
+      return;
+    }
+    if (!PASSWORD_RULES.every((rule) => rule.test(newPassword))) {
+      setError('Mật khẩu mới chưa đạt đủ tiêu chí bên dưới.');
       return;
     }
     setSaving(true);
-    // Supabase không có API kiểm tra mật khẩu hiện tại riêng — updateUser sẽ áp dụng
-    // trực tiếp cho phiên đang đăng nhập (đã được xác thực).
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setSaving(false);
+
+    // Đổi mk khi đã login: KHÔNG cần OTP (chỉ "Quên mật khẩu?" mới cần OTP vì lúc đó chưa
+    // đăng nhập được). Gọi Edge Function change-password — verify currentPassword + đổi mk
+    // bằng admin API phía server, tránh lỗi "Current password required..." của client SDK
+    // updateUser() khi project bật Secure password change.
+    const { error } = await supabase.functions.invoke('change-password', {
+      body: { currentPassword, newPassword },
+    });
     if (error) {
+      setSaving(false);
       setError('Đổi mật khẩu thất bại: ' + error.message);
       return;
     }
+
+    // admin.updateUserById revoke session cũ của user (bảo mật, phía Supabase tự làm) —
+    // access token trên browser hiện tại đã invalid ngay sau bước trên. Re-login bằng mk
+    // mới để lấy session mới, nếu không request tiếp theo (kể cả lần đổi mk sau) sẽ lỗi
+    // "Session not found".
+    const { error: reloginError } = await supabase.auth.signInWithPassword({
+      email: session.user.email,
+      password: newPassword,
+    });
+    setSaving(false);
+    if (reloginError) {
+      setError('Đổi mật khẩu thành công nhưng làm mới phiên đăng nhập thất bại. Vui lòng đăng xuất và đăng nhập lại bằng mật khẩu mới.');
+      return;
+    }
+
     setNotice('Đổi mật khẩu thành công.');
     setCurrentPassword('');
     setNewPassword('');
@@ -256,8 +311,18 @@ function PasswordTab({ isDarkMode, theme }) {
 
   return (
     <div className="grid grid-cols-2 gap-4 max-w-lg">
+      {/* Ẩn nút "hiện mật khẩu" mặc định của Edge/Chrome (::-ms-reveal, autofill button) —
+          chồng lên nút Eye/EyeOff tự viết trong PasswordField, gây ra 2 icon mắt cùng lúc. */}
+      <style>{`
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear { display: none; }
+        input[type="password"]::-webkit-credentials-auto-fill-button,
+        input[type="password"]::-webkit-strong-password-auto-fill-button { display: none !important; visibility: hidden; }
+      `}</style>
+
       <PasswordField theme={theme} label="Mật khẩu hiện tại" value={currentPassword} onChange={setCurrentPassword} show={showCurrent} setShow={setShowCurrent} />
       <PasswordField theme={theme} label="Mật khẩu mới" value={newPassword} onChange={setNewPassword} show={showNew} setShow={setShowNew} />
+      <PasswordRequirements value={newPassword} />
 
       <p className={`col-span-2 text-xs ${theme.sub}`}>
         Lưu ý: nếu tài khoản của bạn đăng nhập qua Google/Facebook (chưa từng đặt mật khẩu), hãy dùng "Quên mật khẩu?" ở màn đăng nhập để thiết lập mật khẩu lần đầu.

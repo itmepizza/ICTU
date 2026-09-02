@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, Moon, Sun, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Moon, Sun, Eye, EyeOff, Check } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import logoIctu from './assets/logo-ictu.png';
 // Ảnh toà nhà KTX dùng cho panel bên trái — thay bằng ảnh thật của trường trong thư mục assets.
@@ -22,7 +22,40 @@ function normalizeEmail(raw) {
 }
 
 // Mật khẩu phải có: 1 chữ thường, 1 chữ hoa, 1 chữ số, 1 ký hiệu.
+const PASSWORD_RULES = [
+  { key: 'lower', label: 'chữ thường', test: (v) => /[a-z]/.test(v) },
+  { key: 'upper', label: 'chữ HOA', test: (v) => /[A-Z]/.test(v) },
+  { key: 'digit', label: 'chữ số', test: (v) => /\d/.test(v) },
+  { key: 'symbol', label: 'ký hiệu', test: (v) => /[^A-Za-z0-9]/.test(v) },
+  { key: 'length', label: 'tối thiểu 6 ký tự', test: (v) => v.length >= 6 },
+];
 const PASSWORD_STRENGTH_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).+$/;
+
+// Checklist sống theo giá trị đang gõ — thay cho 1 dòng chữ mờ tĩnh, để người dùng
+// nhìn ngay tiêu chí nào đã đạt (tick xanh) / chưa đạt (vẫn xám), thay vì phải tự
+// đọc câu văn rồi tự đối chiếu với ô mật khẩu.
+function PasswordRequirements({ value, theme }) {
+  return (
+    <div className="-mt-2 flex flex-wrap gap-1.5">
+      {PASSWORD_RULES.map((rule) => {
+        const met = rule.test(value);
+        return (
+          <span
+            key={rule.key}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors duration-200 ${
+              met
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+                : `border-transparent ${theme.dividerText}`
+            }`}
+          >
+            <Check size={11} strokeWidth={3} className={met ? 'opacity-100' : 'opacity-30'} />
+            {rule.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 // mode: 'login' | 'register' | 'forgot'
 export default function Login({ errorMessage, isDark, setIsDark }) {
@@ -255,9 +288,10 @@ export default function Login({ errorMessage, isDark, setIsDark }) {
               <Field theme={theme} label="Họ tên" value={fullName} onChange={setFullName} placeholder="Nguyễn Văn A" required />
               <Field theme={theme} label="Email" type="email" value={email} onChange={setEmail} placeholder="ban@example.com" required />
               <PasswordField theme={theme} value={password} onChange={setPassword} show={showPassword} setShow={setShowPassword} />
+              <PasswordRequirements value={password} theme={theme} />
 
-              <p className={`text-[11px] leading-relaxed transition-colors duration-500 ${theme.footerText}`}>
-                Bằng cách ấn nút "Đăng ký" tôi đồng ý với{' '}
+              <p className={`text-xs transition-colors duration-500 ${theme.subtitle}`}>
+                Bằng việc đăng ký, bạn đồng ý với{' '}
                 <a href="#" className={`transition-colors duration-500 ${theme.link}`}>Điều khoản sử dụng</a> và{' '}
                 <a href="#" className={`transition-colors duration-500 ${theme.link}`}>Chính sách bảo mật</a> của KTX Manager.
                 Tài khoản mới sẽ được tạo với vai trò <b>Sinh viên</b>.
@@ -308,9 +342,7 @@ export default function Login({ errorMessage, isDark, setIsDark }) {
                 maxLength={6}
               />
               <PasswordField theme={theme} label="Mật khẩu mới" value={newPassword} onChange={setNewPassword} show={showNewPassword} setShow={setShowNewPassword} />
-              <p className={`text-[11px] leading-relaxed -mt-2 transition-colors duration-500 ${theme.footerText}`}>
-                Mật khẩu phải bao gồm chữ thường, chữ hoa, chữ số và ký hiệu.
-              </p>
+              <PasswordRequirements value={newPassword} theme={theme} />
               <SubmitButton submitting={submitting} label="Đặt lại mật khẩu" />
               <p className={`text-sm transition-colors duration-500 ${theme.footerText}`}>
                 <button type="button" onClick={() => switchMode('login')} className={`font-semibold transition-colors duration-500 ${theme.link}`}>← Quay lại đăng nhập</button>
