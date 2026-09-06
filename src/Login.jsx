@@ -243,6 +243,14 @@ export default function Login({ errorMessage, isDark, setIsDark }) {
 
   return (
     <div className="min-h-screen flex">
+      {/* Ẩn nút "hiện mật khẩu" mặc định của Edge/Chrome (::-ms-reveal, autofill button) —
+          chồng lên nút Eye/EyeOff tự viết trong PasswordField, gây ra 2 icon mắt cùng lúc. */}
+      <style>{`
+        input[type="password"]::-ms-reveal,
+        input[type="password"]::-ms-clear { display: none; }
+        input[type="password"]::-webkit-credentials-auto-fill-button,
+        input[type="password"]::-webkit-strong-password-auto-fill-button { display: none !important; visibility: hidden; }
+      `}</style>
       {/* ================= Panel trái: ảnh toà nhà KTX ================= */}
       <div
         className="hidden lg:block lg:w-2/3 relative bg-cover bg-center"

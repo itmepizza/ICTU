@@ -8,57 +8,15 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Login from './Login.jsx';
-import ICTULandingPage from './ICTULandingPage.jsx';
 import AccountSettings from './AccountSettings.jsx';
-import SetPasswordModal from './SetPasswordModal.jsx';
 import logoIctu from './assets/logo-ictu.png';
 
 /* Hallmark · genre: modern-minimal · macrostructure: Workbench — Responsive Rail
  * design-system: design.md · designed-as-app
- * scope này: shell (header/sidebar/drawer) + NavItem + ExpandableStatCard/ProgressBar + DashboardView + ChatbotView.
+ * scope này: shell (header/sidebar/drawer) + NavItem + StatCard/ProgressBar + DashboardView + ChatbotView.
  * RoomsView/IssuesView/StudentsView/FeesView kế thừa token màu qua design.md nhưng cấu trúc
  * nội dung bên trong CHƯA được redesign ở lượt này.
  */
-
-// --- CROSSFADE GIỮA CÁC "PHA" CỦA APP (checking session -> landing -> login -> app) ---
-// App() có nhiều early-return (màn chờ kiểm tra session, IntroFlow/landing, Login, app chính).
-// Mỗi early-return được bọc bởi CrossfadeSwitch với activeKey riêng; vì cả 4 nhánh đều trả về
-// CrossfadeSwitch ở vị trí gốc của cây, React coi đó là CÙNG 1 instance qua các lần re-render
-// (chỉ đổi prop activeKey) thay vì unmount/mount lại — nhờ vậy state fade bên trong không bị mất,
-// cho phép crossfade mượt giữa ICTULandingPage -> Login và Login -> App sau khi đăng nhập.
-//
-// QUAN TRỌNG: khi KHÔNG đang chuyển pha (activeKey === displayKey), render thẳng `children`
-// (không lưu qua state) để nội dung luôn "sống" — mọi click/đổi state bên trong (VD: chuyển tab,
-// mở modal trong App chính) vẫn re-render bình thường. Chỉ đóng băng (dùng bản children cũ,
-// lưu ở ref) đúng trong khoảng thời gian đang fade sang pha khác, để không bị giật hình lúc chuyển cảnh.
-function CrossfadeSwitch({ activeKey, duration = 500, children }) {
-  const [displayKey, setDisplayKey] = useState(activeKey);
-  const [fading, setFading] = useState(false);
-  const prevChildrenRef = useRef(children);
-
-  useEffect(() => {
-    if (activeKey === displayKey) return undefined;
-    setFading(true);
-    const timer = setTimeout(() => {
-      setDisplayKey(activeKey);
-      setFading(false);
-    }, duration);
-    return () => clearTimeout(timer);
-  }, [activeKey, displayKey, duration]);
-
-  const isSamePhase = activeKey === displayKey;
-  if (isSamePhase) {
-    // Luôn cập nhật bản "cuối cùng biết" của pha hiện tại, để nếu pha kế đổi thì có sẵn
-    // nội dung đúng để đóng băng lúc fade-out (thay vì hiện nội dung cũ hơn nữa).
-    prevChildrenRef.current = children;
-  }
-
-  return (
-    <div style={{ opacity: fading ? 0 : 1, transition: `opacity ${duration}ms ease-in-out` }}>
-      {isSamePhase ? children : prevChildrenRef.current}
-    </div>
-  );
-}
 
 // --- MOCK DATA ---
 const MOCK_ROOMS = [
@@ -99,46 +57,28 @@ const MOCK_STUDENTS = [
   { id: 'DTC2210110', fullName: 'Đỗ Thị Ngọc', dob: '17/10/2006', gender: 'Nữ', phone: '0989 890 110' },
 ];
 
-// GHI CHÚ: MOCK_STUDENTS vẫn dùng tạm cho StudentsView (chưa yêu cầu nối lượt này).
-// Bảng phí/công nợ đã nối Supabase thật (bảng `fees`) — xem FeesView bên dưới, không còn
-// dùng dữ liệu ảo nữa.
+// GHI CHÚ: Tương tự MOCK_STUDENTS ở trên — chưa có bảng phí/công nợ thật trong Supabase, nên tạm
+// dùng danh sách ẢO (mock) để dựng giao diện "Phí & Công nợ" cho Kế toán. Khi có bảng thật (VD:
+// `fees`, liên kết student_id + kỳ thu), thay MOCK_FEES bằng truy vấn Supabase tương ứng.
+// monthlyFee/paid/debt tính theo đơn vị VNĐ; debt = monthlyFee - paid (không âm).
+const MOCK_FEES = [
+  { studentId: 'DTC2210101', room: 'R101', monthlyFee: 550000, paid: 550000 },
+  { studentId: 'DTC2210102', room: 'R101', monthlyFee: 550000, paid: 550000 },
+  { studentId: 'DTC2210103', room: 'R102', monthlyFee: 550000, paid: 0 },
+  { studentId: 'DTC2210104', room: 'R102', monthlyFee: 550000, paid: 275000 },
+  { studentId: 'DTC2210105', room: 'R201', monthlyFee: 600000, paid: 600000 },
+  { studentId: 'DTC2210106', room: 'R201', monthlyFee: 600000, paid: 0 },
+  { studentId: 'DTC2210107', room: 'R202', monthlyFee: 600000, paid: 600000 },
+  { studentId: 'DTC2210108', room: 'R202', monthlyFee: 600000, paid: 300000 },
+  { studentId: 'DTC2210109', room: 'R203', monthlyFee: 600000, paid: 600000 },
+  { studentId: 'DTC2210110', room: 'R203', monthlyFee: 600000, paid: 0 },
+].map(f => ({ ...f, debt: Math.max(f.monthlyFee - f.paid, 0) }));
 
 // GHI CHÚ: Trước đây thông báo dùng dữ liệu mẫu tĩnh (INITIAL_NOTIFICATIONS) giống nhau cho mọi người dùng.
 // Đã thay bằng dữ liệu thật lấy từ bảng `notifications` trong Supabase (xem hàm loadNotifications trong App()),
 // vì thông báo cần gắn với đúng người nhận (sinh viên cụ thể / vai trò quản lý) — dữ liệu tĩnh không đáp ứng được yêu cầu này.
 
 // Định dạng "x phút/giờ/ngày trước" từ cột created_at (timestamptz) của Supabase.
-// Format nhẹ nội dung markdown do Gemini trả về (### heading, **bold**, gạch đầu dòng *, ---)
-// thành HTML an toàn: escape HTML trước, chỉ áp cú pháp markdown-lite sau — không trộn lẫn
-// nội dung gốc với markup được inject.
-const escapeHtml = (s) => s
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-const formatAiReport = (raw) => {
-  const lines = escapeHtml(raw).split('\n');
-  const html = [];
-  let listBuf = [];
-  const flushList = () => {
-    if (listBuf.length) { html.push(`<ul class="ai-report-list">${listBuf.join('')}</ul>`); listBuf = []; }
-  };
-  for (let rawLine of lines) {
-    if (/^---+$/.test(rawLine.trim())) { flushList(); html.push('<hr class="ai-report-hr" />'); continue; }
-    if (/^#{1,6}\s+/.test(rawLine)) {
-      const content = rawLine.replace(/^#{1,6}\s+/, '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
-      flushList(); html.push(`<h4 class="ai-report-h4">${content}</h4>`); continue;
-    }
-    if (/^\s*[\*\-]\s+/.test(rawLine)) {
-      const content = rawLine.replace(/^\s*[\*\-]\s+/, '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
-      listBuf.push(`<li>${content}</li>`); continue;
-    }
-    flushList();
-    const line = rawLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
-    if (line.trim() === '') { html.push('<div class="ai-report-gap"></div>'); } else { html.push(`<p class="ai-report-p">${line}</p>`); }
-  }
-  flushList();
-  return html.join('');
-};
-
 const timeAgo = (iso) => {
   if (!iso) return '';
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -161,30 +101,44 @@ NỘI QUY KÝ TÚC XÁ (Tài liệu cho AI):
 `;
 
 // --- GEMINI API HELPER ---
-// Key KHÔNG nằm ở client nữa. Gọi qua Supabase Edge Function "chatbot-ai" —
-// key thật lưu ở Edge Function secret (GEMINI_API_KEY), chỉ server đọc được.
+const apiKey = "AIzaSyAMPHhGaFwkzBeMhZQWNTPuHg2kRQGYoA0"; // ⚠️ Xem ghi chú cuối file — cần thay bằng key MỚI của riêng bạn
 const callGemini = async (prompt, systemInstruction) => {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    systemInstruction: { parts: [{ text: systemInstruction || "Bạn là trợ lý AI hữu ích." }] }
+  };
+
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      const { data, error } = await supabase.functions.invoke('chatbot-ai', {
-        body: { prompt, systemInstruction: systemInstruction || "Bạn là trợ lý AI hữu ích." }
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
-      if (error) {
-        // Lỗi 4xx (key/model sai phía server) -> retry vô ích, dừng ngay
-        const status = error.context?.status;
-        console.error(`Edge Function chatbot-ai lỗi (status ${status}):`, error.message);
-        if (status >= 400 && status < 500) {
-          throw new Error(`Chatbot AI lỗi ${status}: ${error.message}`);
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        // In ra console để xem lỗi THẬT (mở F12 -> Console) thay vì chỉ thấy thông báo chung chung trên giao diện
+        console.error(`Gemini API lỗi (status ${response.status}):`, errBody);
+        // Lỗi do sai key / sai model / request không hợp lệ (4xx) -> retry vô ích, dừng ngay
+        if (response.status >= 400 && response.status < 500) {
+          throw new Error(`Gemini API lỗi ${response.status}: ${errBody || 'Kiểm tra API key hoặc tên model.'}`);
         }
-        throw error;
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      return data?.text || "Không có phản hồi từ AI.";
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "Không có phản hồi từ AI.";
     } catch (error) {
-      if (error.message?.includes('Chatbot AI lỗi 4') || attempt === 4) throw error;
+      // Lỗi 4xx (key/model sai) thì dừng ngay, không cần thử lại 5 lần cho mất thời gian
+      if (error.message?.includes('Gemini API lỗi 4') || attempt === 4) throw error;
       await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
     }
   }
 };
+// ⚠️ QUAN TRỌNG: key phía trên đã từng bị lộ công khai trong lịch sử dự án.
+// Hãy vào Google AI Studio (aistudio.google.com/apikey) thu hồi key cũ, tạo key MỚI,
+// dán thay vào biến apiKey ở trên. Tuyệt đối không để key thật trong code khi deploy thật
+// (nên chuyển qua backend/Edge Function để giấu key — đã trao đổi ở phần đầu dự án).
 
 // Nhãn hiển thị cho 2 loại quyền có thể xin cấp qua "Yêu cầu quyền truy cập đặc biệt".
 // Dùng chung giữa AccessRequestModal (form gửi yêu cầu) và IssuesView (màn xét duyệt)
@@ -205,26 +159,7 @@ const SIDEBAR_MODE_OPTIONS = [
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
-  // true = đang hiện trang giới thiệu (ICTULandingPage); bấm "Vào hệ thống" mới chuyển sang Login/Dashboard.
-  const [showLanding, setShowLanding] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-
-  // Rời trang giới thiệu -> đẩy 1 mục lịch sử "login" để nút Back của TRÌNH DUYỆT (không phải
-  // nút trong app) quay lại được ICTULandingPage, thay vì thoát hẳn ứng dụng/tab.
-  const enterSystem = () => {
-    window.history.pushState({ ictuView: 'login' }, '');
-    setShowLanding(false);
-  };
-
-  useEffect(() => {
-    const handlePopState = () => {
-      // Bấm Back trên trình duyệt trong khi đang ở Login -> quay về landing.
-      // (Nếu đã đăng nhập/vào dashboard thì không can thiệp, để hành vi Back mặc định của trình duyệt xử lý.)
-      if (!showLanding) setShowLanding(true);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [showLanding]);
 
   // Chế độ hiển thị thanh bên: 'expanded' (luôn mở), 'collapsed' (luôn thu gọn),
   // 'hover' (thu gọn, mở rộng tạm thời khi rê chuột vào). Mặc định: hover.
@@ -358,9 +293,6 @@ export default function App() {
   const [session, setSession] = useState(undefined); // undefined = đang kiểm tra, null = chưa đăng nhập
   const [profile, setProfile] = useState(null);
   const [authError, setAuthError] = useState(null);
-  // Tài khoản đăng nhập bằng Google chưa từng đặt mật khẩu app (profile.has_password === false)
-  // sẽ được nhắc đặt mật khẩu 1 lần mỗi phiên; bấm "Để sau" chỉ ẩn tạm cho phiên này.
-  const [skipPasswordPrompt, setSkipPasswordPrompt] = useState(false);
 
   // Bắt lỗi OAuth trả về qua query string (?error=...), dọn URL sạch sẽ
   // để không bị lặp lại lỗi khi reload, đồng thời hiện thông báo dễ hiểu.
@@ -472,42 +404,20 @@ export default function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // Đảm bảo sau đăng xuất luôn về màn Login, kể cả khi trước đó user đã có
-    // sẵn session lúc tải trang (bỏ qua bước "Vào hệ thống" nên showLanding
-    // chưa từng bị set false) — nếu không sẽ rơi về lại ICTULandingPage.
-    setShowLanding(false);
   };
 
   // Đang kiểm tra session lần đầu -> hiện màn hình chờ
   if (session === undefined) {
     return (
-      <CrossfadeSwitch activeKey="checking">
-        <div className="min-h-screen flex items-center justify-center bg-slate-50">
-          <Loader2 className="animate-spin text-[#004b87]" size={32} />
-        </div>
-      </CrossfadeSwitch>
-    );
-  }
-
-  // Chưa đăng nhập + chưa bấm "Vào hệ thống" -> hiện ICTULandingPage thẳng (đã bỏ
-  // chuỗi mở màn IntroFlow — Let's Go / % loading — nên vào thẳng trang giới thiệu).
-  // Bọc CrossfadeSwitch để khi bấm "Vào hệ thống" (ICTULandingPage -> Login) cũng mượt.
-  if (!session && showLanding) {
-    return (
-      <CrossfadeSwitch activeKey="landing">
-        <ICTULandingPage onEnterSystem={enterSystem} isDark={isDarkMode} setIsDark={setIsDarkMode} />
-      </CrossfadeSwitch>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-[#004b87]" size={32} />
+      </div>
     );
   }
 
   // Chưa đăng nhập -> hiện trang Login (kèm lỗi nếu vừa có OAuth thất bại)
-  // Bọc CrossfadeSwitch để lúc đăng nhập thành công (Login -> App chính) cũng mượt.
   if (!session) {
-    return (
-      <CrossfadeSwitch activeKey="login">
-        <Login errorMessage={authError} isDark={isDarkMode} setIsDark={setIsDarkMode} />
-      </CrossfadeSwitch>
-    );
+    return <Login errorMessage={authError} isDark={isDarkMode} setIsDark={setIsDarkMode} />;
   }
 
   const displayName = profile?.full_name || session.user.email;
@@ -525,7 +435,7 @@ export default function App() {
       {(role === 'manager' || role === 'accountant') && (
         <NavItem icon={<Users />} label="Sinh viên nội trú" isActive={activeTab === 'students'} onClick={() => setActiveTab('students')} isOpen={isOpenState} />
       )}
-      {(role === 'manager' || role === 'accountant') && (
+      {role === 'accountant' && (
         <NavItem icon={<Wallet />} label="Phí & Công nợ" isActive={activeTab === 'fees'} onClick={() => setActiveTab('fees')} isOpen={isOpenState} />
       )}
       <NavItem icon={<MessageSquareWarning />} label={role === 'student' ? 'Báo cáo sự cố' : 'Quản lý Phản ánh'} isActive={activeTab === 'issues'} onClick={() => setActiveTab('issues')} isOpen={isOpenState} />
@@ -533,22 +443,8 @@ export default function App() {
   );
 
   // Layout Container
-  // Bọc CrossfadeSwitch (activeKey="app") để chuyển cảnh Login -> App chính cũng crossfade,
-  // đồng bộ với 3 nhánh early-return phía trên (xem ghi chú tại định nghĩa CrossfadeSwitch).
   return (
-    <CrossfadeSwitch activeKey="app">
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-500 ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
-      {/* Nhắc đặt mật khẩu app cho tài khoản Google chưa từng đặt (profiles.has_password === false).
-          Không phải màn chặn cứng: người dùng có thể "Để sau" và tiếp tục dùng app bình thường. */}
-      {profile && profile.has_password === false && !skipPasswordPrompt && (
-        <SetPasswordModal
-          session={session}
-          isDarkMode={isDarkMode}
-          onDone={() => updateProfileLocally({ has_password: true })}
-          onSkip={() => setSkipPasswordPrompt(true)}
-        />
-      )}
-
       {/* Thanh trên cùng — trải dài toàn bộ chiều ngang trang, logo nằm gọn bên trong thanh này */}
       <header className={`fixed top-0 left-0 right-0 h-16 z-30 flex items-stretch border-b shadow-sm transition-colors duration-500 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <div className="w-14 sm:w-20 shrink-0 flex items-center justify-center gap-1">
@@ -654,7 +550,7 @@ export default function App() {
                 aria-label={`Tài khoản: ${displayName}`}
                 aria-expanded={isProfileOpen}
                 aria-haspopup="true"
-                className={`flex items-center gap-3 pl-2 sm:pl-4 rounded-lg py-1 pr-1 transition-colors duration-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400`}
+                className={`flex items-center gap-3 border-l pl-2 sm:pl-4 rounded-lg py-1 pr-1 transition-colors duration-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${isDarkMode ? 'border-slate-600' : 'border-slate-200'}`}
               >
                 <div className="w-8 h-8 rounded-full bg-[#004b87] text-white flex items-center justify-center font-bold text-sm shrink-0 overflow-hidden">
                   {profile?.avatar_url ? (
@@ -821,7 +717,7 @@ export default function App() {
         <main className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${isMainShiftedOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
         {/* Dynamic Content */}
         <div className={`p-4 sm:p-6 flex-1 overflow-auto transition-colors duration-500 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
-          {activeTab === 'dashboard' && <DashboardView isDarkMode={isDarkMode} role={role} />}
+          {activeTab === 'dashboard' && <DashboardView isDarkMode={isDarkMode} />}
           {activeTab === 'rooms' && <RoomsView isDarkMode={isDarkMode} role={role} session={session} />}
           {activeTab === 'issues' && <IssuesView isDarkMode={isDarkMode} role={role} session={session} subTab={issuesSubTab} onSubTabChange={setIssuesSubTab} />}
           {activeTab === 'account' && (
@@ -861,7 +757,6 @@ export default function App() {
         <AccessRequestModal isDarkMode={isDarkMode} session={session} onClose={() => setIsAccessRequestOpen(false)} />
       )}
     </div>
-    </CrossfadeSwitch>
   );
 }
 
@@ -1137,76 +1032,10 @@ function NavItem({ icon, label, isActive, onClick, isOpen, highlight }) {
   );
 }
 
-function DashboardView({ isDarkMode, role }) {
+function DashboardView({ isDarkMode }) {
   const t = isDarkMode
     ? { title: 'text-slate-100', sub: 'text-slate-400', card: 'bg-slate-800 border-slate-700', heading: 'text-slate-200', theadBg: 'bg-slate-900 text-slate-400 border-slate-700', divide: 'divide-slate-700', cell: 'text-slate-200', trackBg: 'bg-slate-700', pct: 'text-slate-400' }
     : { title: 'text-slate-800', sub: 'text-slate-500', card: 'bg-white border-slate-200', heading: 'text-slate-700', theadBg: 'bg-slate-50 text-slate-600 border-slate-200', divide: 'divide-slate-100', cell: 'text-slate-800', trackBg: 'bg-slate-100', pct: 'text-slate-600' };
-
-  const [loading, setLoading] = useState(true);
-  const [expandedStat, setExpandedStat] = useState(null); // key của box đang mở rộng, null = tất cả đóng
-  const [studentCount, setStudentCount] = useState(0);
-  const [pendingIssues, setPendingIssues] = useState(0);
-  const [totalDebt, setTotalDebt] = useState(0);
-  const [debtStudentCount, setDebtStudentCount] = useState(0);
-  const [buildingStats, setBuildingStats] = useState([]);
-  const [totalCapacity, setTotalCapacity] = useState(0);
-  const [totalOccupied, setTotalOccupied] = useState(0);
-
-  const formatVND = (n) => n.toLocaleString('vi-VN') + ' đ';
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      const [
-        { count: sCount },
-        { count: iCount },
-        { data: buildings },
-        { data: rooms },
-        { data: activeRes },
-        { data: fees },
-      ] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'student'),
-        supabase.from('issues').select('id', { count: 'exact', head: true }).eq('status', 'Chờ xử lý'),
-        supabase.from('buildings').select('id, name').order('name'),
-        supabase.from('rooms').select('id, building_id, capacity'),
-        supabase.from('residencies').select('bed_id, beds(room_id)').eq('status', 'active'),
-        supabase.from('fees').select('debt, student_id'),
-      ]);
-      if (cancelled) return;
-
-      const occupiedByRoom = {};
-      (activeRes || []).forEach((row) => {
-        const roomId = row.beds?.room_id;
-        if (roomId) occupiedByRoom[roomId] = (occupiedByRoom[roomId] || 0) + 1;
-      });
-
-      const stats = (buildings || []).map((b) => {
-        const roomsOfBuilding = (rooms || []).filter((r) => r.building_id === b.id);
-        const capacity = roomsOfBuilding.reduce((sum, r) => sum + (r.capacity || 0), 0);
-        const occupied = roomsOfBuilding.reduce((sum, r) => sum + (occupiedByRoom[r.id] || 0), 0);
-        const percent = capacity ? Math.round((occupied / capacity) * 100) : 0;
-        return { name: b.name, totalRooms: roomsOfBuilding.length, capacity, occupied, percent };
-      });
-
-      const capSum = (rooms || []).reduce((sum, r) => sum + (r.capacity || 0), 0);
-      const occSum = Object.values(occupiedByRoom).reduce((sum, n) => sum + n, 0);
-
-      setStudentCount(sCount || 0);
-      setPendingIssues(iCount || 0);
-      setBuildingStats(stats);
-      setTotalCapacity(capSum);
-      setTotalOccupied(occSum);
-      setTotalDebt((fees || []).reduce((sum, f) => sum + Number(f.debt || 0), 0));
-      setDebtStudentCount((fees || []).filter((f) => Number(f.debt) > 0).length);
-      setLoading(false);
-    };
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  const occupancyPercent = totalCapacity ? Math.round((totalOccupied / totalCapacity) * 100) : 0;
-  const vacantBeds = Math.max(totalCapacity - totalOccupied, 0);
 
   // Danh sách "hoạt động AI gần đây" tách thành mảng để dựng dạng timeline bên dưới
   // thay vì lặp lại icon-box giống StatCard (xem design.md — tránh khuôn 2 card song sinh).
@@ -1215,14 +1044,6 @@ function DashboardView({ isDarkMode, role }) {
     { icon: <Building size={13} />, dot: isDarkMode ? 'bg-emerald-400' : 'bg-emerald-600', text: <><span className="font-semibold">AI Xếp phòng</span> vừa tự động gợi ý phòng R202 cho 1 sinh viên nữ.</>, time: '2 giờ trước' },
   ];
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <Loader2 className="animate-spin text-[#004b87]" size={28} />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
@@ -1230,30 +1051,29 @@ function DashboardView({ isDarkMode, role }) {
         <p className={`text-sm mt-1 transition-colors duration-500 ${t.sub}`}>Thông số hoạt động KTX Đại học CNTT & Truyền thông</p>
       </div>
 
-      {/* 5 box thống kê dạng accordion ngang: mặc định tất cả đóng (khuôn StatCard cũ), click 1 box
-          để nó "kéo dài" ra (flex-grow tăng) và hiện dòng chi tiết bên dưới con số — box đang mở
-          trước đó tự thu lại vì chỉ 1 key được lưu trong expandedStat. Dùng flexGrow thay vì đổi
-          cột grid để layout co giãn mượt, không bị lệch hàng khi 1 ô phình to. */}
-      <div className="flex flex-wrap gap-4">
-        {[
-          { key: 'occupancy', title: 'Tỷ lệ lấp đầy toàn KTX', value: `${occupancyPercent}%`, detail: `${totalOccupied}/${totalCapacity} giường đang sử dụng — ${studentCount} sinh viên`, icon: <CheckCircle2 />, color: 'blue' },
-          { key: 'students', title: 'Tổng sinh viên', value: studentCount.toLocaleString('vi-VN'), detail: `${totalOccupied} đang nội trú / ${studentCount} tài khoản sinh viên`, icon: <Users />, color: 'indigo' },
-          { key: 'vacant', title: 'Giường trống', value: vacantBeds.toLocaleString('vi-VN'), detail: `${vacantBeds}/${totalCapacity} giường còn khả dụng toàn KTX`, icon: <Building />, color: 'green' },
-          { key: 'issues', title: 'Phản ánh chờ xử lý', value: pendingIssues.toLocaleString('vi-VN'), detail: 'Cần giải quyết ngay — xem chi tiết ở Quản lý Phản ánh', icon: <AlertCircle />, color: 'orange' },
-          { key: 'debt', title: 'Tổng công nợ', value: formatVND(totalDebt), detail: `${debtStudentCount} sinh viên còn nợ / ${studentCount} tổng sinh viên`, icon: <Wallet />, color: 'red' },
-        ].map((s) => (
-          <ExpandableStatCard
-            key={s.key}
-            isDarkMode={isDarkMode}
-            title={s.title}
-            value={s.value}
-            detail={s.detail}
-            icon={s.icon}
-            color={s.color}
-            isOpen={expandedStat === s.key}
-            onToggle={() => setExpandedStat((prev) => (prev === s.key ? null : s.key))}
-          />
-        ))}
+      {/* Bố cục bất đối xứng: 1 chỉ số trọng tâm (tỷ lệ lấp đầy — KPI điều hành quan trọng
+          nhất với ban quản lý) được nhấn mạnh bằng khối lớn nền accent, 3 chỉ số còn lại xếp
+          gọn bên cạnh — thay vì 4 thẻ đều nhau theo khuôn lưới mặc định. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <div
+          style={{ fontFamily: 'var(--font-display), sans-serif' }}
+          className="lg:col-span-4 rounded-lg p-5 flex flex-col justify-between bg-[#004b87] text-white transition-colors duration-500"
+        >
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-blue-100">Tỷ lệ lấp đầy toàn KTX</h4>
+            <CheckCircle2 size={16} className="text-blue-200 shrink-0" />
+          </div>
+          <div className="mt-6">
+            <span className="text-5xl font-extrabold tracking-tight">92%</span>
+            <p style={{ fontFamily: 'inherit' }} className="text-sm text-blue-100 mt-2 font-sans">+2% so với kỳ trước — 1.245 sinh viên đang nội trú</p>
+          </div>
+        </div>
+
+        <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard isDarkMode={isDarkMode} title="Tổng sinh viên" value="1,245" trend="+12" icon={<Users />} color="blue" />
+          <StatCard isDarkMode={isDarkMode} title="Phòng trống" value="24" text="giường khả dụng" icon={<Building />} color="green" />
+          <StatCard isDarkMode={isDarkMode} title="Phản ánh chờ xử lý" value="8" text="Cần giải quyết ngay" icon={<AlertCircle />} color="orange" />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1269,22 +1089,29 @@ function DashboardView({ isDarkMode, role }) {
                 <tr>
                   <th className="py-3 px-4">Tòa nhà</th>
                   <th className="py-3 px-4">Tổng số phòng</th>
-                  <th className="py-3 px-4">Giường đang sử dụng</th>
+                  <th className="py-3 px-4">Đang sử dụng</th>
                   <th className="py-3 px-4">Tỷ lệ</th>
                 </tr>
               </thead>
               <tbody className={`divide-y transition-colors duration-500 ${t.divide}`}>
-                {buildingStats.length === 0 && (
-                  <tr><td colSpan={4} className={`py-6 text-center text-sm transition-colors duration-500 ${t.sub}`}>Chưa có dữ liệu tòa nhà.</td></tr>
-                )}
-                {buildingStats.map((b) => (
-                  <tr key={b.name}>
-                    <td className={`py-3 px-4 font-medium transition-colors duration-500 ${t.cell}`}>{b.name}</td>
-                    <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>{b.totalRooms}</td>
-                    <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>{b.occupied}/{b.capacity}</td>
-                    <td className="py-3 px-4"><ProgressBar percent={b.percent} color="bg-blue-500" isDarkMode={isDarkMode}/></td>
-                  </tr>
-                ))}
+                <tr>
+                  <td className={`py-3 px-4 font-medium transition-colors duration-500 ${t.cell}`}>Tòa A1 (Nam)</td>
+                  <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>120</td>
+                  <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>118</td>
+                  <td className="py-3 px-4"><ProgressBar percent={98} color="bg-blue-500" isDarkMode={isDarkMode}/></td>
+                </tr>
+                <tr>
+                  <td className={`py-3 px-4 font-medium transition-colors duration-500 ${t.cell}`}>Tòa A2 (Nữ)</td>
+                  <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>100</td>
+                  <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>85</td>
+                  <td className="py-3 px-4"><ProgressBar percent={85} color="bg-indigo-500" isDarkMode={isDarkMode}/></td>
+                </tr>
+                <tr>
+                  <td className={`py-3 px-4 font-medium transition-colors duration-500 ${t.cell}`}>Tòa A3 (Cao cấp)</td>
+                  <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>50</td>
+                  <td className={`py-3 px-4 transition-colors duration-500 ${t.cell}`}>20</td>
+                  <td className="py-3 px-4"><ProgressBar percent={40} color="bg-green-500" isDarkMode={isDarkMode}/></td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -1434,7 +1261,7 @@ function RoomsView({ isDarkMode, role, session }) {
 }
 
 function RegisterHousingModal({ isDarkMode, session, rooms, buildings, occupiedMap, onClose, onRegistered }) {
-  const [findMode, setFindMode] = useState('manual'); // 'manual' | 'ai' | 'change'
+  const [findMode, setFindMode] = useState('manual'); // 'manual' | 'ai' | 'change' | 'history'
   const [step, setStep] = useState('browse'); // 'browse' | 'detail' | 'success'
   const [selectedRoom, setSelectedRoom] = useState(null); // phòng đang xem chi tiết
 
@@ -1479,6 +1306,25 @@ function RegisterHousingModal({ isDarkMode, session, rooms, buildings, occupiedM
       setLoadingResidency(false);
     })();
   }, [session.user.id]);
+
+  // Lịch sử ở — toàn bộ residency (mọi status) của sinh viên, sắp mới nhất trước; chỉ tải khi
+  // sinh viên mở tab "Lịch sử ở" để tránh query thừa cho phần lớn người dùng không xem tab này.
+  const [residencyHistory, setResidencyHistory] = useState(null); // null = chưa tải
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  useEffect(() => {
+    if (findMode !== 'history' || residencyHistory !== null) return;
+    (async () => {
+      setLoadingHistory(true);
+      const { data, error } = await supabase
+        .from('residencies')
+        .select('id, status, start_date, end_date, beds(room_id, rooms(room_number, buildings(name)))')
+        .eq('student_id', session.user.id)
+        .order('start_date', { ascending: false });
+      if (error) console.error('Lỗi tải lịch sử ở:', error.message);
+      setResidencyHistory(data || []);
+      setLoadingHistory(false);
+    })();
+  }, [findMode, residencyHistory, session.user.id]);
 
   const handleSubmitChangeRequest = async () => {
     setChangeError('');
@@ -1646,9 +1492,35 @@ function RegisterHousingModal({ isDarkMode, session, rooms, buildings, occupiedM
                 <button onClick={() => setFindMode('manual')} className={`px-3 py-1.5 rounded-md text-xs font-medium ${findMode === 'manual' ? 'bg-[#004b87] text-white' : t.sub}`}>Tìm thủ công</button>
                 <button onClick={() => setFindMode('ai')} className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1 ${findMode === 'ai' ? 'bg-[#004b87] text-white' : t.sub}`}><Sparkles size={12} /> AI gợi ý</button>
                 <button onClick={() => setFindMode('change')} className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1 whitespace-nowrap ${findMode === 'change' ? 'bg-[#004b87] text-white' : t.sub}`}><RefreshCw size={12} /> Yêu cầu trả/chuyển phòng</button>
+                <button onClick={() => setFindMode('history')} className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1 whitespace-nowrap ${findMode === 'history' ? 'bg-[#004b87] text-white' : t.sub}`}><Building size={12} /> Lịch sử ở</button>
               </div>
 
-              {findMode === 'change' ? (
+              {findMode === 'history' ? (
+                <div className={`rounded-lg border overflow-hidden transition-colors duration-500 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                  {loadingHistory ? (
+                    <p className={`text-sm text-center py-6 transition-colors duration-500 ${t.sub}`}>Đang tải...</p>
+                  ) : !residencyHistory || residencyHistory.length === 0 ? (
+                    <p className={`text-sm text-center py-6 transition-colors duration-500 ${t.sub}`}>Bạn chưa từng ở phòng nào.</p>
+                  ) : (
+                    residencyHistory.map((h) => {
+                      const room = h.beds?.rooms;
+                      return (
+                        <div key={h.id} className={`flex items-center justify-between px-3 py-2.5 border-b last:border-b-0 text-sm ${t.row}`}>
+                          <div>
+                            <p className="font-medium">{room?.room_number || '—'}{room?.buildings?.name ? ` (${room.buildings.name})` : ''}</p>
+                            <p className={`text-xs ${t.sub}`}>
+                              {h.start_date} → {h.end_date || (h.status === 'active' ? 'hiện tại' : '—')}
+                            </p>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${h.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                            {h.status === 'active' ? 'Đang ở' : 'Đã kết thúc'}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : findMode === 'change' ? (
                 <>
                   {loadingResidency ? (
                     <div className="flex justify-center py-6"><Loader2 className="animate-spin text-[#004b87]" size={22} /></div>
@@ -1954,8 +1826,6 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
   };
   const [aiLoading, setAiLoading] = useState(false);
   const [aiSummary, setAiSummary] = useState(null);
-  const [aiSummaryAt, setAiSummaryAt] = useState(null);
-  const [aiError, setAiError] = useState(false);
 
   const [issues, setIssues] = useState([]);
   const [violations, setViolations] = useState([]);
@@ -1963,7 +1833,6 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
   const [loading, setLoading] = useState(true);
   const [isNewIssueOpen, setIsNewIssueOpen] = useState(false);
   const [isNewViolationOpen, setIsNewViolationOpen] = useState(false);
-  const [isNewViolationReportOpen, setIsNewViolationReportOpen] = useState(false);
 
   const isStudent = role === 'student';
 
@@ -2003,7 +1872,7 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
     if (isRoomChange && status === 'Đã xử lý' && target?.student_id) {
       const { data: endedRows, error: resErr } = await supabase
         .from('residencies')
-        .update({ status: 'ended' })
+        .update({ status: 'ended', end_date: new Date().toISOString().slice(0, 10) })
         .eq('student_id', target.student_id)
         .eq('status', 'active')
         .select('id');
@@ -2145,7 +2014,6 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
   const handleSummarize = async () => {
     setAiLoading(true);
     setAiSummary(null);
-    setAiError(false);
     const prompt = `
       Danh sách phản ánh của sinh viên:
       ${JSON.stringify(issues.map(i => ({ location: locationLabel(i), noi_dung: i.title, status: i.status })))}
@@ -2155,34 +2023,11 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
     try {
       const response = await callGemini(prompt, systemPrompt);
       setAiSummary(response);
-      setAiSummaryAt(new Date().toISOString());
     } catch (error) {
-      setAiSummary("Không thể tạo báo cáo. Vui lòng kiểm tra kết nối và thử lại.");
-      setAiError(true);
-      setAiSummaryAt(new Date().toISOString());
+      setAiSummary("Lỗi khi phân tích. Vui lòng kiểm tra kết nối.");
     } finally {
       setAiLoading(false);
     }
-  };
-
-  // Nhận cả object `v` (không chỉ id) vì cần student_id + title để gửi thông báo cho đúng người.
-  // student_id ở đây có thể là NGƯỜI VI PHẠM (nếu quản lý tự ghi nhận qua NewViolationModal) hoặc
-  // NGƯỜI PHẢN ÁNH (nếu sinh viên tự phản ánh người khác qua NewViolationReportModal) — cả 2 trường
-  // hợp đều đúng là "người cần biết cập nhật này", nên dùng chung 1 chỗ gửi thông báo.
-  const updateViolationStatus = async (v, status) => {
-    setViolations(prev => prev.map(item => (item.id === v.id ? { ...item, status } : item)));
-    const { error } = await supabase.from('violations').update({ status }).eq('id', v.id);
-    if (error) { console.error('Lỗi cập nhật trạng thái vi phạm:', error.message); return; }
-
-    const statusText = status === 'Đã xử lý' ? 'đã được xử lý' : status === 'Đang xử lý' ? 'đang được xử lý' : 'đã cập nhật trạng thái';
-    const { error: notifErr } = await supabase.from('notifications').insert({
-      recipient_id: v.student_id,
-      type: 'violation',
-      title: `Cập nhật vi phạm: ${v.title}`,
-      description: `Phản ánh/vi phạm "${v.title}" ${statusText}.`,
-      read: false,
-    });
-    if (notifErr) console.error('Lỗi tạo thông báo cập nhật vi phạm:', notifErr.message);
   };
 
   const statusBadge = (status) => (
@@ -2205,18 +2050,13 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
         <div>
           <h1 className={`text-2xl font-bold transition-colors duration-500 ${t.title}`}>{isStudent ? 'Báo cáo sự cố' : 'Quản lý Phản ánh & Vi phạm nội quy'}</h1>
           <p className={`text-sm mt-1 transition-colors duration-500 ${t.sub}`}>
-            {isStudent ? 'Gửi và theo dõi các phản ánh sự cố, vi phạm nội quy bạn đã báo cáo cho Ban quản lý KTX.' : 'Theo dõi, xử lý và dùng AI tóm tắt các vấn đề sinh viên báo cáo.'}
+            {isStudent ? 'Gửi và theo dõi các phản ánh, sự cố bạn đã báo cáo cho Ban quản lý KTX.' : 'Theo dõi, xử lý và dùng AI tóm tắt các vấn đề sinh viên báo cáo.'}
           </p>
         </div>
         <div className="flex gap-2">
           {isStudent && (
             <button onClick={() => setIsNewIssueOpen(true)} className="bg-[#004b87] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#003a68] transition shadow-sm flex items-center gap-2">
               <Plus size={16} /> Báo cáo sự cố
-            </button>
-          )}
-          {isStudent && (
-            <button onClick={() => setIsNewViolationReportOpen(true)} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition shadow-sm flex items-center gap-2">
-              <AlertCircle size={16} /> Phản ánh vi phạm
             </button>
           )}
           {!isStudent && subTab === 'issues' && (
@@ -2245,64 +2085,10 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
         </div>
       )}
 
-      {/* Hallmark · component-scope redesign: card báo cáo AI. Trước đây dùng màu tím rời rạc
-       * (bg-purple-50/text-purple-900) không nằm trong design.md, và render nội dung markdown
-       * thô (dấu ** hiện trực tiếp). Bản mới: border-left accent #004b87/blue-400 — cùng ngôn ngữ
-       * thị giác với StatCard/ChatbotView AI-card — kèm header có icon badge, timestamp, nút đóng,
-       * và formatAiReport() dịch cú pháp in đậm, tiêu đề, gạch đầu dòng thành markup thật thay vì hiện thô.
-       */}
       {aiSummary && !isStudent && subTab === 'issues' && (
-        <div
-          className={`rounded-lg pl-4 pr-4 py-4 border-l-4 border-y border-r shadow-sm animate-in fade-in slide-in-from-top-4 transition-colors duration-500 ${
-            aiError
-              ? (isDarkMode ? 'border-l-red-400 bg-slate-800 border-y-slate-700 border-r-slate-700' : 'border-l-red-500 bg-white border-y-slate-200 border-r-slate-200')
-              : (isDarkMode ? 'border-l-blue-400 bg-slate-800 border-y-slate-700 border-r-slate-700' : 'border-l-[#004b87] bg-white border-y-slate-200 border-r-slate-200')
-          }`}
-        >
-          <div className="flex items-start justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2.5">
-              <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-500 ${
-                aiError
-                  ? (isDarkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-600')
-                  : (isDarkMode ? 'bg-blue-400/10 text-blue-300' : 'bg-blue-50 text-[#004b87]')
-              }`}>
-                <Bot size={16} />
-              </span>
-              <div>
-                <h3
-                  style={{ fontFamily: 'var(--font-display), sans-serif' }}
-                  className={`font-bold text-sm tracking-tight transition-colors duration-500 ${t.title}`}
-                >
-                  Báo cáo Tổng hợp từ Trợ lý AI
-                </h3>
-                {aiSummaryAt && (
-                  <p className={`text-xs mt-0.5 transition-colors duration-500 ${t.sub}`}>{timeAgo(aiSummaryAt)}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {aiError && (
-                <button
-                  onClick={handleSummarize}
-                  className={`text-xs font-medium px-2.5 py-1.5 rounded-md border flex items-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${isDarkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                >
-                  <RefreshCw size={12} /> Thử lại
-                </button>
-              )}
-              <button
-                onClick={() => { setAiSummary(null); setAiSummaryAt(null); setAiError(false); }}
-                aria-label="Đóng báo cáo"
-                title="Đóng"
-                className={`p-1.5 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${isDarkMode ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}
-              >
-                <X size={15} />
-              </button>
-            </div>
-          </div>
-          <div
-            className={`text-sm leading-relaxed transition-colors duration-500 ${t.cell} [&_.ai-report-h4]:font-bold [&_.ai-report-h4]:text-[13px] [&_.ai-report-h4]:uppercase [&_.ai-report-h4]:tracking-wide [&_.ai-report-h4]:mt-3 [&_.ai-report-h4]:mb-1.5 [&_.ai-report-hr]:my-3 [&_.ai-report-hr]:border-t ${isDarkMode ? '[&_.ai-report-hr]:border-slate-700 [&_.ai-report-h4]:text-blue-300' : '[&_.ai-report-hr]:border-slate-200 [&_.ai-report-h4]:text-[#004b87]'} [&_.ai-report-list]:list-disc [&_.ai-report-list]:pl-5 [&_.ai-report-list]:space-y-1 [&_.ai-report-list]:my-1.5 [&_.ai-report-p]:my-1.5 [&_.ai-report-gap]:h-1 [&_strong]:font-semibold [&_em]:not-italic [&_em]:font-medium ${isDarkMode ? '[&_em]:text-slate-300' : '[&_em]:text-slate-600'}`}
-            dangerouslySetInnerHTML={{ __html: formatAiReport(aiSummary) }}
-          />
+        <div className={`rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-top-4 border transition-colors duration-500 ${isDarkMode ? 'bg-purple-950/40 border-purple-900' : 'bg-purple-50 border-purple-200'}`}>
+          <h3 className={`font-bold flex items-center gap-2 mb-3 transition-colors duration-500 ${isDarkMode ? 'text-purple-200' : 'text-purple-900'}`}><Bot size={18} /> Báo cáo Tổng hợp từ Trợ lý AI</h3>
+          <div className={`text-sm whitespace-pre-wrap leading-relaxed prose prose-sm max-w-none transition-colors duration-500 ${isDarkMode ? 'text-purple-300' : 'text-purple-800'}`}>{aiSummary}</div>
         </div>
       )}
 
@@ -2369,7 +2155,7 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
                             </div>
                           ) : statusBadge(issue.status)
                         ) : statusBadge(issue.status)
-                      ) : role === 'manager' ? (
+                      ) : (role === 'manager' || role === 'accountant') ? (
                         <select
                           value={issue.status}
                           onChange={(e) => updateIssueStatus(issue.id, e.target.value)}
@@ -2419,65 +2205,6 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
                       }`}>{v.severity}</span>
                     </td>
                     <td className={`py-3 px-4 transition-colors duration-500 ${t.sub}`}>{new Date(v.date).toLocaleDateString('vi-VN')}</td>
-                    <td className="py-3 px-4">
-                      {(role === 'manager' || role === 'accountant') ? (
-                        <select
-                          value={v.status}
-                          onChange={(e) => updateViolationStatus(v, e.target.value)}
-                          className={`text-xs rounded-full border px-2 py-1 outline-none transition-colors duration-500 ${isDarkMode ? 'bg-slate-700 border-slate-600 text-slate-200' : 'bg-white border-slate-300'}`}
-                        >
-                          <option value="Chưa xử lý">Chưa xử lý</option>
-                          <option value="Đang xử lý">Đang xử lý</option>
-                          <option value="Đã xử lý">Đã xử lý</option>
-                        </select>
-                      ) : statusBadge(v.status)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Sinh viên: bảng riêng cho các vi phạm họ ĐÃ TỰ phản ánh (khác bảng "issues" ở trên).
-       * Dữ liệu lấy từ cùng mảng `violations` đã tải sẵn — RLS "Students view own violations"
-       * (student_id = auth.uid()) tự giới hạn chỉ trả về đúng các dòng của chính họ, không cần
-       * query/thêm state riêng.
-       */}
-      {!loading && isStudent && (
-        <div className={`rounded-xl shadow-sm border overflow-hidden transition-colors duration-500 ${t.card}`}>
-          <div className={`px-4 py-3 border-b transition-colors duration-500 ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
-            <h3 className={`text-sm font-semibold transition-colors duration-500 ${t.title}`}>Vi phạm bạn đã phản ánh</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className={`font-medium border-b transition-colors duration-500 ${t.theadBg}`}>
-                <tr>
-                  <th className="py-3 px-4">Nội dung phản ánh</th>
-                  <th className="py-3 px-4">Mức độ</th>
-                  <th className="py-3 px-4">Ngày</th>
-                  <th className="py-3 px-4">Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y transition-colors duration-500 ${t.divide}`}>
-                {violations.length === 0 && (
-                  <tr><td colSpan={4} className={`py-6 text-center text-sm transition-colors duration-500 ${t.sub}`}>Bạn chưa phản ánh vi phạm nào.</td></tr>
-                )}
-                {violations.map(v => (
-                  <tr key={v.id} className={t.hover}>
-                    <td className="py-3 px-4 max-w-xs">
-                      <p className={`font-medium truncate transition-colors duration-500 ${t.cell}`}>{v.title}</p>
-                      <p className={`text-xs truncate transition-colors duration-500 ${t.sub}`}>{v.description}</p>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium transition-colors duration-500 ${
-                        v.severity === 'Nghiêm trọng' ? (isDarkMode ? 'bg-red-900/40 text-red-300' : 'bg-red-100 text-red-700') :
-                        v.severity === 'Trung bình' ? (isDarkMode ? 'bg-orange-900/40 text-orange-300' : 'bg-orange-100 text-orange-700') :
-                        (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600')
-                      }`}>{v.severity}</span>
-                    </td>
-                    <td className={`py-3 px-4 transition-colors duration-500 ${t.sub}`}>{new Date(v.date).toLocaleDateString('vi-VN')}</td>
                     <td className="py-3 px-4">{statusBadge(v.status)}</td>
                   </tr>
                 ))}
@@ -2489,9 +2216,6 @@ function IssuesView({ isDarkMode, role, session, subTab: subTabProp, onSubTabCha
 
       {isNewIssueOpen && (
         <NewIssueModal isDarkMode={isDarkMode} session={session} onClose={() => setIsNewIssueOpen(false)} onCreated={loadData} />
-      )}
-      {isNewViolationReportOpen && (
-        <NewViolationReportModal isDarkMode={isDarkMode} session={session} onClose={() => setIsNewViolationReportOpen(false)} onCreated={loadData} />
       )}
       {isNewViolationOpen && (
         <NewViolationModal isDarkMode={isDarkMode} students={students} onClose={() => setIsNewViolationOpen(false)} onCreated={loadData} />
@@ -2674,17 +2398,6 @@ function NewViolationModal({ isDarkMode, students, onClose, onCreated }) {
     });
     setSubmitting(false);
     if (err) { setError('Ghi nhận thất bại: ' + err.message); return; }
-
-    // Báo ngay cho sinh viên bị nêu tên rằng họ vừa bị ghi nhận vi phạm — không chờ tới lúc
-    // đổi trạng thái mới biết (khác với updateViolationStatus, đây là thông báo LÚC TẠO MỚI).
-    const { error: notifErr } = await supabase.from('notifications').insert({
-      recipient_id: studentId,
-      type: 'violation',
-      title: `Bạn bị ghi nhận vi phạm: ${title.trim()}`,
-      description: description.trim() || 'Vui lòng xem chi tiết trong mục Vi phạm nội quy.',
-      read: false,
-    });
-    if (notifErr) console.error('Lỗi tạo thông báo vi phạm:', notifErr.message);
     onCreated();
     onClose();
   };
@@ -2724,130 +2437,6 @@ function NewViolationModal({ isDarkMode, students, onClose, onCreated }) {
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-// Modal cho SINH VIÊN "Phản ánh vi phạm" — khác NewViolationModal (quản lý ghi nhận vi phạm của
-// MỘT sinh viên cụ thể do đã chọn từ danh sách). Ở đây sinh viên không có quyền tra danh sách sinh
-// viên khác (bảng `profiles` chỉ SELECT được hồ sơ của chính mình), nên KHÔNG chọn được "đối tượng
-// vi phạm" theo student_id thật — phải mô tả đối tượng bằng chữ (vị trí/phòng) trong nội dung.
-// Ghi thẳng vào bảng `violations` (dùng chung 1 bảng với vi phạm do quản lý ghi nhận) để hiện NGAY
-// trong tab "Vi phạm nội quy" phía quản lý — không cần bảng/route riêng.
-// LƯU Ý QUAN TRỌNG (cần xác nhận lại phía Supabase trước khi dùng thật):
-// 1) violations.student_id đang lưu = người VI PHẠM (theo cách NewViolationModal dùng). Ở luồng
-//    này ta không biết ai vi phạm nên tạm lưu student_id = người GỬI PHẢN ÁNH (session.user.id) và
-//    gắn tiền tố "[Phản ánh SV]" vào title để quản lý không hiểu nhầm chính SV này vi phạm.
-// 2) RLS bảng `violations` trước giờ chỉ/insert bởi quản lý (qua NewViolationModal) — CẦN THÊM
-//    policy INSERT cho role student (student_id = auth.uid()) thì thao tác dưới đây mới chạy được,
-//    nếu chưa có sẽ gặp lỗi quyền (RLS) tương tự các lỗi CHECK constraint gặp trước đây trong dự án.
-function NewViolationReportModal({ isDarkMode, session, onClose, onCreated }) {
-  const [step, setStep] = useState('form'); // 'form' | 'success'
-  const [target, setTarget] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [severity, setSeverity] = useState('Nhẹ');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-
-  const t = isDarkMode
-    ? { overlay: 'bg-black/70', card: 'bg-slate-800 border-slate-700 text-slate-100', label: 'text-slate-300', input: 'bg-slate-700 border-slate-600 text-slate-100' }
-    : { overlay: 'bg-black/60', card: 'bg-white border-slate-200 text-slate-800', label: 'text-slate-600', input: 'bg-white border-slate-300 text-slate-800' };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!title.trim() || !description.trim()) {
-      setError('Vui lòng nhập tiêu đề và mô tả vi phạm.');
-      return;
-    }
-    setSubmitting(true);
-    const fullTitle = `[Phản ánh SV] ${title.trim()}`;
-    const fullDescription = target.trim()
-      ? `Đối tượng/vị trí: ${target.trim()}\n${description.trim()}`
-      : description.trim();
-
-    const { data: newViolation, error: err } = await supabase.from('violations').insert({
-      student_id: session.user.id,
-      title: fullTitle,
-      description: fullDescription,
-      severity,
-      // KHÔNG set status thủ công — bảng violations có CHECK constraint riêng cho status
-      // (khác bảng issues), giá trị 'Chờ xử lý' không thuộc enum này -> insert bị lỗi 400.
-      // NewViolationModal (quản lý) không set status và chạy đúng, nên để DB tự áp default.
-    }).select().single();
-    setSubmitting(false);
-    if (err) { setError('Gửi thất bại: ' + err.message); return; }
-
-    // Broadcast cho toàn bộ Ban quản lý (recipient_role='manager') — cùng cơ chế "nổi" trong
-    // chuông thông báo như yêu cầu quyền truy cập đặc biệt. type: 'violation' đã được
-    // handleNotificationClick (trong App) xử lý sẵn để điều hướng thẳng tới tab "Vi phạm nội quy".
-    const { error: notifErr } = await supabase.from('notifications').insert({
-      recipient_role: 'manager',
-      type: 'violation',
-      title: fullTitle,
-      description: fullDescription.slice(0, 140),
-      read: false,
-    });
-    if (notifErr) console.error('Lỗi tạo thông báo phản ánh vi phạm:', notifErr.message);
-
-    setStep('success');
-  };
-
-  const handleBack = () => { onCreated(); onClose(); };
-
-  return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-colors duration-500 ${t.overlay}`} onClick={step === 'form' ? onClose : undefined}>
-      {step === 'form' ? (
-        <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm rounded-2xl border shadow-xl p-6 space-y-3 transition-colors duration-500 ${t.card}`}>
-          <h3 className="font-bold text-lg mb-1 flex items-center gap-2"><AlertCircle size={18} className="text-red-500" /> Phản ánh vi phạm nội quy</h3>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 transition-colors duration-500 ${t.label}`}>Tiêu đề</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="VD: Cờ bạc trong phòng, ồn ào sau 23h..." className={`w-full rounded-lg border px-3 py-2 text-sm transition-colors duration-500 ${t.input}`} />
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 transition-colors duration-500 ${t.label}`}>Đối tượng / vị trí (nếu biết)</label>
-            <input type="text" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="VD: Phòng R203, Tòa A2" className={`w-full rounded-lg border px-3 py-2 text-sm transition-colors duration-500 ${t.input}`} />
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 transition-colors duration-500 ${t.label}`}>Mô tả chi tiết</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Mô tả sự việc bạn muốn phản ánh..." className={`w-full rounded-lg border px-3 py-2 text-sm transition-colors duration-500 ${t.input}`} />
-          </div>
-
-          <div>
-            <label className={`block text-xs font-medium mb-1 transition-colors duration-500 ${t.label}`}>Mức độ (theo đánh giá của bạn)</label>
-            <select value={severity} onChange={(e) => setSeverity(e.target.value)} className={`w-full rounded-lg border px-3 py-2 text-sm transition-colors duration-500 ${t.input}`}>
-              <option value="Nhẹ">Nhẹ</option>
-              <option value="Trung bình">Trung bình</option>
-              <option value="Nghiêm trọng">Nghiêm trọng</option>
-            </select>
-          </div>
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-500 ${isDarkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-100 hover:bg-slate-200'}`}>Hủy</button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 flex items-center gap-2">
-              {submitting && <Loader2 size={16} className="animate-spin" />} Gửi phản ánh
-            </button>
-          </div>
-        </form>
-      ) : (
-        <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm rounded-2xl border shadow-xl p-6 text-center transition-colors duration-500 ${t.card}`}>
-          <div className="w-14 h-14 rounded-full bg-green-100 text-green-600 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={28} />
-          </div>
-          <p className="text-sm leading-relaxed mb-6">
-            Ban quản lý ký túc xá đã nhận được phản ánh vi phạm của bạn, chúng tôi sẽ xem xét sớm nhất có thể.
-          </p>
-          <button onClick={handleBack} className="w-full bg-[#004b87] text-white py-2.5 rounded-lg text-sm font-medium hover:bg-[#003a68] transition">
-            Quay lại
-          </button>
-        </div>
-      )}
     </div>
   );
 }
@@ -2948,10 +2537,6 @@ function StudentsView({ isDarkMode }) {
 function FeesView({ isDarkMode }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'paid' | 'debt'
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState(null);
-  const period = new Date().toISOString().slice(0, 7); // kỳ thu hiện tại, dạng 'YYYY-MM'
 
   const t = isDarkMode
     ? { title: 'text-slate-100', sub: 'text-slate-400', card: 'bg-slate-800 border-slate-700', headerBg: 'bg-slate-900 border-slate-700', heading: 'text-slate-200', select: 'bg-slate-700 border-slate-600 text-slate-200', input: 'bg-slate-700 border-slate-600 text-slate-200 placeholder-slate-400', theadTxt: 'text-slate-400 border-slate-700', divide: 'divide-slate-700', hover: 'hover:bg-slate-700/50', cell: 'text-slate-200' }
@@ -2959,64 +2544,19 @@ function FeesView({ isDarkMode }) {
 
   const formatVND = (n) => n.toLocaleString('vi-VN') + ' đ';
 
-  // Bảng `fees` chỉ lưu bản ghi khi kế toán/quản lý đã nhập; sinh viên (profiles.role='student')
-  // và phòng hiện ở (qua residencies active) là nguồn thật đầy đủ — ghép lại để mỗi sinh viên
-  // luôn có 1 dòng dù chưa từng có bản ghi phí cho kỳ này (monthlyFee/paid mặc định 0).
-  const loadData = async () => {
-    setLoading(true);
-    const [{ data: profiles }, { data: activeRes }, { data: fees }] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, student_code').eq('role', 'student').order('full_name'),
-      supabase.from('residencies').select('student_id, beds(room_id, rooms(room_number))').eq('status', 'active'),
-      supabase.from('fees').select('*').eq('period', period),
-    ]);
+  const rows = MOCK_FEES.map(f => {
+    const student = MOCK_STUDENTS.find(s => s.id === f.studentId);
+    return { ...f, fullName: student?.fullName || '—' };
+  });
 
-    const roomByStudent = {};
-    (activeRes || []).forEach((r) => {
-      roomByStudent[r.student_id] = r.beds?.rooms?.room_number || null;
-    });
-    const feeByStudent = {};
-    (fees || []).forEach((f) => { feeByStudent[f.student_id] = f; });
+  const totalCollected = rows.reduce((sum, r) => sum + r.paid, 0);
+  const totalDebt = rows.reduce((sum, r) => sum + r.debt, 0);
+  const debtCount = rows.filter(r => r.debt > 0).length;
 
-    setRows((profiles || []).map((p) => {
-      const fee = feeByStudent[p.id];
-      return {
-        studentId: p.id,
-        studentCode: p.student_code || '—',
-        fullName: p.full_name || '—',
-        room: roomByStudent[p.id] || '—',
-        monthlyFee: fee ? Number(fee.monthly_fee) : 0,
-        paid: fee ? Number(fee.paid) : 0,
-      };
-    }));
-    setLoading(false);
-  };
-
-  useEffect(() => { loadData(); }, []);
-
-  const updateLocal = (studentId, patch) => {
-    setRows((prev) => prev.map((r) => (r.studentId === studentId ? { ...r, ...patch } : r)));
-  };
-
-  const saveFee = async (studentId) => {
-    const row = rows.find((r) => r.studentId === studentId);
-    if (!row) return;
-    setSavingId(studentId);
-    const { error } = await supabase
-      .from('fees')
-      .upsert({ student_id: studentId, period, monthly_fee: row.monthlyFee, paid: row.paid }, { onConflict: 'student_id,period' });
-    if (error) console.error('Lỗi lưu phí:', error.message);
-    setSavingId(null);
-  };
-
-  const withDebt = rows.map((r) => ({ ...r, debt: Math.max(r.monthlyFee - r.paid, 0) }));
-  const totalCollected = withDebt.reduce((sum, r) => sum + r.paid, 0);
-  const totalDebt = withDebt.reduce((sum, r) => sum + r.debt, 0);
-  const debtCount = withDebt.filter((r) => r.debt > 0).length;
-
-  const filtered = withDebt.filter((r) => {
+  const filtered = rows.filter(r => {
     const matchStatus = statusFilter === 'all' || (statusFilter === 'paid' ? r.debt === 0 : r.debt > 0);
     const q = search.trim().toLowerCase();
-    const matchSearch = !q || r.fullName.toLowerCase().includes(q) || r.studentCode.toLowerCase().includes(q) || r.room.toLowerCase().includes(q);
+    const matchSearch = !q || r.fullName.toLowerCase().includes(q) || r.studentId.toLowerCase().includes(q) || r.room.toLowerCase().includes(q);
     return matchStatus && matchSearch;
   });
 
@@ -3025,7 +2565,7 @@ function FeesView({ isDarkMode }) {
       <div>
         <h1 className={`text-2xl font-bold transition-colors duration-500 ${t.title}`}>Phí & Công nợ</h1>
         <p className={`text-sm mt-1 transition-colors duration-500 ${t.sub}`}>
-          Theo dõi phí phòng và công nợ của sinh viên nội trú — kỳ {period}.
+          Theo dõi phí phòng và công nợ của sinh viên nội trú.
         </p>
       </div>
 
@@ -3040,7 +2580,7 @@ function FeesView({ isDarkMode }) {
         </div>
         <div className={`rounded-xl border p-4 transition-colors duration-500 ${t.card}`}>
           <p className={`text-xs font-medium transition-colors duration-500 ${t.sub}`}>Sinh viên còn nợ</p>
-          <p className={`text-xl font-bold mt-1 transition-colors duration-500 ${t.title}`}>{debtCount} / {withDebt.length}</p>
+          <p className={`text-xl font-bold mt-1 transition-colors duration-500 ${t.title}`}>{debtCount} / {rows.length}</p>
         </div>
       </div>
 
@@ -3070,64 +2610,43 @@ function FeesView({ isDarkMode }) {
           </div>
         </div>
         <div className="overflow-x-auto flex-1 p-4">
-          {loading ? (
-            <div className="flex justify-center py-10"><Loader2 className="animate-spin text-[#004b87]" size={24} /></div>
-          ) : (
-            <table className="w-full text-sm text-left">
-              <thead className={`border-b transition-colors duration-500 ${t.theadTxt}`}>
-                <tr>
-                  <th className="pb-3 font-medium">Mã sinh viên</th>
-                  <th className="pb-3 font-medium">Họ và tên</th>
-                  <th className="pb-3 font-medium">Phòng</th>
-                  <th className="pb-3 font-medium">Phí tháng</th>
-                  <th className="pb-3 font-medium">Đã đóng</th>
-                  <th className="pb-3 font-medium">Công nợ</th>
-                  <th className="pb-3 font-medium">Trạng thái</th>
+          <table className="w-full text-sm text-left">
+            <thead className={`border-b transition-colors duration-500 ${t.theadTxt}`}>
+              <tr>
+                <th className="pb-3 font-medium">Mã sinh viên</th>
+                <th className="pb-3 font-medium">Họ và tên</th>
+                <th className="pb-3 font-medium">Phòng</th>
+                <th className="pb-3 font-medium">Phí tháng</th>
+                <th className="pb-3 font-medium">Đã đóng</th>
+                <th className="pb-3 font-medium">Công nợ</th>
+                <th className="pb-3 font-medium">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className={`divide-y transition-colors duration-500 ${t.divide}`}>
+              {filtered.length === 0 && (
+                <tr><td colSpan={7} className={`py-6 text-center text-sm transition-colors duration-500 ${t.sub}`}>Không tìm thấy dữ liệu phù hợp.</td></tr>
+              )}
+              {filtered.map(r => (
+                <tr key={r.studentId} className={t.hover}>
+                  <td className="py-3 font-semibold text-[#004b87]">{r.studentId}</td>
+                  <td className={`py-3 transition-colors duration-500 ${t.cell}`}>{r.fullName}</td>
+                  <td className={`py-3 transition-colors duration-500 ${t.cell}`}>{r.room}</td>
+                  <td className={`py-3 transition-colors duration-500 ${t.cell}`}>{formatVND(r.monthlyFee)}</td>
+                  <td className={`py-3 transition-colors duration-500 ${t.cell}`}>{formatVND(r.paid)}</td>
+                  <td className={`py-3 font-medium ${r.debt > 0 ? 'text-red-600' : t.cell}`}>{formatVND(r.debt)}</td>
+                  <td className="py-3">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium border transition-colors duration-500 ${
+                      r.debt > 0
+                        ? (isDarkMode ? 'bg-red-900/30 text-red-300 border-red-800' : 'bg-red-50 text-red-700 border-red-200')
+                        : (isDarkMode ? 'bg-green-900/30 text-green-300 border-green-800' : 'bg-green-50 text-green-700 border-green-200')
+                    }`}>
+                      {r.debt > 0 ? 'Còn nợ' : 'Đã đóng đủ'}
+                    </span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className={`divide-y transition-colors duration-500 ${t.divide}`}>
-                {filtered.length === 0 && (
-                  <tr><td colSpan={7} className={`py-6 text-center text-sm transition-colors duration-500 ${t.sub}`}>Không tìm thấy dữ liệu phù hợp.</td></tr>
-                )}
-                {filtered.map(r => (
-                  <tr key={r.studentId} className={t.hover}>
-                    <td className="py-3 font-semibold text-[#004b87]">{r.studentCode}</td>
-                    <td className={`py-3 transition-colors duration-500 ${t.cell}`}>{r.fullName}</td>
-                    <td className={`py-3 transition-colors duration-500 ${t.cell}`}>{r.room}</td>
-                    <td className="py-3">
-                      <input
-                        type="number"
-                        value={r.monthlyFee}
-                        onChange={(e) => updateLocal(r.studentId, { monthlyFee: Number(e.target.value) || 0 })}
-                        onBlur={() => saveFee(r.studentId)}
-                        className={`w-24 text-sm rounded-md border px-2 py-1 outline-none transition-colors duration-500 ${t.input}`}
-                      />
-                    </td>
-                    <td className="py-3">
-                      <input
-                        type="number"
-                        value={r.paid}
-                        onChange={(e) => updateLocal(r.studentId, { paid: Number(e.target.value) || 0 })}
-                        onBlur={() => saveFee(r.studentId)}
-                        className={`w-24 text-sm rounded-md border px-2 py-1 outline-none transition-colors duration-500 ${t.input}`}
-                      />
-                      {savingId === r.studentId && <Loader2 size={12} className="inline-block animate-spin ml-1.5 text-[#004b87]" />}
-                    </td>
-                    <td className={`py-3 font-medium ${r.debt > 0 ? 'text-red-600' : t.cell}`}>{formatVND(r.debt)}</td>
-                    <td className="py-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium border transition-colors duration-500 ${
-                        r.debt > 0
-                          ? (isDarkMode ? 'bg-red-900/30 text-red-300 border-red-800' : 'bg-red-50 text-red-700 border-red-200')
-                          : (isDarkMode ? 'bg-green-900/30 text-green-300 border-green-800' : 'bg-green-50 text-green-700 border-green-200')
-                      }`}>
-                        {r.debt > 0 ? 'Còn nợ' : 'Đã đóng đủ'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -3298,70 +2817,45 @@ function ChatbotView({ isDarkMode, floating, onClose, messages, setMessages }) {
 }
 
 // --- UTILS ---
-// Chọn cỡ chữ theo độ dài chuỗi giá trị (số đã format, VD "1.245.000 đ") để con số dài
-// (tiền tệ, số lớn) không tràn khung hay bị đẩy xuống dòng — thay vì 1 cỡ cố định cho mọi giá trị.
-function pickValueTextClass(value, isOpen) {
-  const len = String(value).length;
-  if (isOpen) {
-    if (len > 14) return 'text-xl sm:text-2xl';
-    if (len > 10) return 'text-2xl sm:text-3xl';
-    if (len > 7) return 'text-3xl sm:text-4xl';
-    return 'text-4xl sm:text-5xl';
-  }
-  if (len > 10) return 'text-base';
-  if (len > 7) return 'text-xl';
-  if (len > 5) return 'text-2xl';
-  return 'text-3xl';
-}
-
-// Box thống kê có thể mở/thu (dùng cho hàng 5 chỉ số của Tổng quan). Đóng: giống StatCard cũ.
-// Mở: to hơn (flexGrow tăng qua style, không đổi cột grid, nên các box khác co lại mượt thay vì
-// bố cục bị lệch), hiện thêm dòng chi tiết, GIỮ NGUYÊN màu viền trái của chính box đó (không đổi
-// thành nền màu đặc như bản cũ) — đúng yêu cầu "mở ra vẫn cùng màu viền".
-function ExpandableStatCard({ title, value, detail, icon, color, isDarkMode, isOpen, onToggle }) {
+function StatCard({ title, value, text, trend, icon, color, isDarkMode }) {
+  // Trước đây: icon đóng khung màu ở góc trên trái + badge trend góc trên phải — đúng khuôn
+  // "AI dashboard card" mặc định (xem design.md § Macrostructure family). Bố cục mới: viền
+  // nhấn bên trái (cùng ngôn ngữ với trạng thái active của NavItem), số liệu lớn là trọng tâm
+  // thị giác thay vì icon, icon lùi thành chi tiết nhỏ đi kèm nhãn.
   const borderColors = {
     blue: isDarkMode ? 'border-l-blue-400' : 'border-l-blue-600',
     green: isDarkMode ? 'border-l-emerald-400' : 'border-l-emerald-600',
     orange: isDarkMode ? 'border-l-orange-400' : 'border-l-orange-600',
     indigo: isDarkMode ? 'border-l-indigo-400' : 'border-l-indigo-600',
-    red: isDarkMode ? 'border-l-red-400' : 'border-l-red-600',
   };
   const iconColors = {
     blue: isDarkMode ? 'text-blue-400' : 'text-blue-600',
     green: isDarkMode ? 'text-emerald-400' : 'text-emerald-600',
     orange: isDarkMode ? 'text-orange-400' : 'text-orange-600',
     indigo: isDarkMode ? 'text-indigo-400' : 'text-indigo-600',
-    red: isDarkMode ? 'text-red-400' : 'text-red-600',
   };
-  const valueSize = pickValueTextClass(value, isOpen);
 
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={isOpen}
-      style={{ flexGrow: isOpen ? 3 : 1, flexBasis: '10rem' }}
-      className={`text-left rounded-lg border-l-4 border-y border-r px-4 py-4 transition-[flex-grow,background-color,border-color] duration-300 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${borderColors[color] || borderColors.blue} ${isDarkMode ? 'bg-slate-800 border-y-slate-700 border-r-slate-700 hover:bg-slate-800/80' : 'bg-white border-y-slate-200 border-r-slate-200 hover:bg-slate-50'}`}
-    >
+    <div className={`relative pl-4 pr-5 py-4 rounded-lg border-l-4 border-y border-r transition-colors duration-500 ${borderColors[color] || borderColors.blue} ${isDarkMode ? 'bg-slate-800 border-y-slate-700 border-r-slate-700' : 'bg-white border-y-slate-200 border-r-slate-200'}`}>
       <div className="flex items-start justify-between gap-2">
         <h4 className={`text-xs font-semibold uppercase tracking-wide transition-colors duration-500 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{title}</h4>
         <span className={`shrink-0 transition-colors duration-500 ${iconColors[color] || iconColors.blue}`}>
           {React.cloneElement(icon, { size: 16 })}
         </span>
       </div>
-      <div className="mt-2">
+      <div className="flex items-baseline gap-2 mt-2">
         <span
           style={{ fontFamily: 'var(--font-display), sans-serif' }}
-          className={`block font-extrabold tracking-tight tabular-nums whitespace-nowrap leading-none transition-[font-size] duration-300 ${valueSize} ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}
+          className={`text-3xl font-extrabold tracking-tight transition-colors duration-500 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}
         >
           {value}
         </span>
+        {trend && (
+          <span className={`text-xs font-medium transition-colors duration-500 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{trend}</span>
+        )}
       </div>
-      {/* grid-template-rows 0fr -> 1fr: animate chiều cao mở/đóng mượt mà không cần đo bằng JS */}
-      <div className={`grid transition-all duration-300 ease-out ${isOpen ? 'grid-rows-[1fr] opacity-100 mt-2' : 'grid-rows-[0fr] opacity-0'}`}>
-        <p className={`overflow-hidden text-xs sm:text-sm transition-colors duration-500 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{detail}</p>
-      </div>
-    </button>
+      {text && <p className={`text-xs mt-1 transition-colors duration-500 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{text}</p>}
+    </div>
   );
 }
 
