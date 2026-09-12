@@ -370,15 +370,26 @@ export default function Login({ errorMessage, isDark, setIsDark }) {
                 <div className={`flex-1 border-t transition-colors duration-500 ${theme.divider}`} />
               </div>
 
-              <button
-                onClick={() => handleOAuthLogin('google')}
-                disabled={loadingProvider !== null || submitting}
-                aria-label="Đăng nhập bằng Google"
-                className={`w-full flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors duration-500 disabled:opacity-60 ${theme.oauthBtn} ${theme.label}`}
-              >
-                {loadingProvider === 'google' ? <Loader2 size={16} className="animate-spin" /> : <GoogleIcon />}
-                Google
-              </button>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => handleOAuthLogin('google')}
+                  disabled={loadingProvider !== null || submitting}
+                  aria-label="Đăng nhập bằng Google"
+                  className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors duration-500 disabled:opacity-60 ${theme.oauthBtn} ${theme.label}`}
+                >
+                  {loadingProvider === 'google' ? <Loader2 size={16} className="animate-spin" /> : <GoogleIcon />}
+                  Google
+                </button>
+                <button
+                  onClick={() => handleOAuthLogin('azure')}
+                  disabled={loadingProvider !== null || submitting}
+                  aria-label="Đăng nhập bằng Microsoft"
+                  className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors duration-500 disabled:opacity-60 ${theme.oauthBtn} ${theme.label}`}
+                >
+                  {loadingProvider === 'azure' ? <Loader2 size={16} className="animate-spin" /> : <MicrosoftIcon />}
+                  Microsoft
+                </button>
+              </div>
             </>
           )}
 
@@ -479,6 +490,17 @@ function GoogleIcon() {
       <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3 16.3 3 9.7 7.3 6.3 14.7z"/>
       <path fill="#4CAF50" d="M24 45c5.4 0 10.3-1.8 14-5.4l-6.5-5.3C29.4 36.1 26.8 37 24 37c-5.3 0-9.7-3.4-11.3-8l-6.6 5.1C9.6 40.6 16.2 45 24 45z"/>
       <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4.1 5.6l6.5 5.3C41.6 35.5 45 30.2 45 24c0-1.4-.1-2.8-.4-4.5z"/>
+    </svg>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 23 23">
+      <rect x="1" y="1" width="10" height="10" fill="#F35325" />
+      <rect x="12" y="1" width="10" height="10" fill="#81BC06" />
+      <rect x="1" y="12" width="10" height="10" fill="#05A6F0" />
+      <rect x="12" y="12" width="10" height="10" fill="#FFBA08" />
     </svg>
   );
 }
