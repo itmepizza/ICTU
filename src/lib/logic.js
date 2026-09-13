@@ -65,6 +65,12 @@ export const buildRoomChangeIssuePayload = (studentId, currentResidency, changeT
 
 const escapeHtml = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+const inlineFormat = (s) =>
+  s
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code class="ai-report-code">$1</code>');
+
 export const formatAiReport = (raw) => {
   const lines = escapeHtml(raw).split('\n');
   const html = [];
@@ -82,24 +88,18 @@ export const formatAiReport = (raw) => {
       continue;
     }
     if (/^#{1,6}\s+/.test(rawLine)) {
-      const content = rawLine
-        .replace(/^#{1,6}\s+/, '')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>');
+      const content = inlineFormat(rawLine.replace(/^#{1,6}\s+/, ''));
       flushList();
       html.push(`<h4 class="ai-report-h4">${content}</h4>`);
       continue;
     }
     if (/^\s*[\*\-]\s+/.test(rawLine)) {
-      const content = rawLine
-        .replace(/^\s*[\*\-]\s+/, '')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>');
+      const content = inlineFormat(rawLine.replace(/^\s*[\*\-]\s+/, ''));
       listBuf.push(`<li>${content}</li>`);
       continue;
     }
     flushList();
-    const line = rawLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\*(.+?)\*/g, '<em>$1</em>');
+    const line = inlineFormat(rawLine);
     if (line.trim() === '') {
       html.push('<div class="ai-report-gap"></div>');
     } else {
