@@ -178,6 +178,140 @@ const SIDEBAR_MODE_OPTIONS = [
   { value: 'hover', label: 'Mở rộng khi di chuột' },
 ];
 
+// --- TÌM KIẾM TOÀN CỤC: dropdown danh mục + kết quả trực tiếp từ Supabase, bấm vào là nhảy tới tab tương ứng ---
+// Danh mục theo vai trò: sinh viên (student) không có quyền xem danh sách sinh viên nên không hiện mục đó.
+const SEARCH_CATS = [
+  { key: 'all', label: 'Tất cả' },
+  { key: 'students', label: 'Sinh viên', roles: ['manager', 'accountant'] },
+  { key: 'rooms', label: 'Phòng' },
+  { key: 'issues', label: 'Sự cố' },
+];
+
+function GlobalSearch({ isDarkMode, role, onNavigate }) {
+  const cats = SEARCH_CATS.filter(c => !c.roles || c.roles.includes(role));
+  const [cat, setCat] = useState('all');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const boxRef = useRef(null);
+  const inputRef = useRef(null);
+  // bỏ ký tự làm hỏng cú pháp .or() của PostgREST
+  const q = query.trim().replace(/[%,()*\\]/g, ' ').trim();
+
+  useEffect(() => {
+    if (q.length < 2) { setResults([]); setLoading(false); return undefined; }
+    let stale = false;
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      const like = `%${q}%`;
+      const want = (k) => (cat === 'all' || cat === k) && cats.some(c => c.key === k);
+      const skip = { data: [] };
+      const [st, rm, is] = await Promise.all([
+        want('students')
+          ? supabase.from('profiles').select('id, full_name, student_code').eq('role', 'student')
+              .or(`full_name.ilike.${like},student_code.ilike.${like}`).limit(5)
+          : skip,
+        want('rooms')
+          ? supabase.from('rooms').select('id, room_number, building_id, buildings(name)').ilike('room_number', like).limit(5)
+          : skip,
+        want('issues')
+          ? supabase.from('issues').select('id, title, status').ilike('title', like).limit(5)
+          : skip,
+      ]);
+      if (stale) return;
+      setResults([
+        ...(st.data || []).map(x => ({ key: `s${x.id}`, kind: 'Sinh viên', Icon: Users, title: x.full_name, sub: x.student_code, tab: 'students', hint: { q: x.full_name } })),
+        ...(rm.data || []).map(x => ({ key: `r${x.id}`, kind: 'Phòng', Icon: Building, title: x.room_number, sub: x.buildings?.name, tab: 'rooms', hint: { buildingId: x.building_id } })),
+        ...(is.data || []).map(x => ({ key: `i${x.id}`, kind: 'Sự cố', Icon: MessageSquareWarning, title: x.title, sub: x.status, tab: 'issues', hint: {} })),
+      ]);
+      setLoading(false);
+    }, 250);
+    return () => { stale = true; clearTimeout(timer); };
+  }, [q, cat, role]);
+
+  useEffect(() => {
+    const onDown = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) { setOpen(false); setMobileOpen(false); }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  const pick = (r) => {
+    onNavigate(r.tab, r.hint);
+    setOpen(false); setMobileOpen(false); setQuery('');
+  };
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter' && results[0]) pick(results[0]);
+    if (e.key === 'Escape') { setOpen(false); setMobileOpen(false); }
+  };
+
+  const catLabel = cats.find(c => c.key === cat)?.label || 'Tất cả';
+  const placeholder = cat === 'all'
+    ? `Tìm ${cats.filter(c => c.key !== 'all').map(c => c.label.toLowerCase()).join(', ')}...`
+    : `Tìm ${catLabel.toLowerCase()}...`;
+  const dk = isDarkMode;
+
+  return (
+    <>
+      <button
+        aria-label="Tìm kiếm"
+        onClick={() => { setMobileOpen(true); setTimeout(() => inputRef.current?.focus(), 0); }}
+        className={`sm:hidden p-2 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'}`}
+      >
+        <Search size={18} />
+      </button>
+      <div ref={boxRef} className={mobileOpen ? 'fixed inset-x-2 top-2 z-50' : 'hidden sm:block relative w-full max-w-[300px] md:max-w-sm lg:max-w-md'}>
+        <div className={`flex items-center rounded-full pl-3 pr-4 py-2 border transition-colors duration-500 ${dk ? 'bg-slate-700 border-slate-600 focus-within:border-blue-400' : 'bg-slate-100 border-slate-200 focus-within:border-blue-400 focus-within:bg-white'}`}>
+          <select
+            value={cat}
+            onChange={(e) => { setCat(e.target.value); setOpen(true); }}
+            aria-label="Danh mục tìm kiếm"
+            className={`bg-transparent text-xs font-semibold outline-none cursor-pointer pr-1 mr-2 border-r ${dk ? 'text-slate-200 border-slate-500' : 'text-slate-600 border-slate-300'}`}
+          >
+            {cats.map(c => <option key={c.key} value={c.key} className="text-slate-800">{c.label}</option>)}
+          </select>
+          <Search size={16} className="text-slate-400 shrink-0" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKeyDown}
+            placeholder={placeholder}
+            className={`bg-transparent border-none outline-none ml-2 w-full text-sm ${dk ? 'placeholder-slate-400 text-slate-100' : 'placeholder-slate-400'}`}
+          />
+        </div>
+        {open && q.length >= 2 && (
+          <div className={`absolute top-full left-0 right-0 mt-2 rounded-lg border shadow-lg max-h-80 overflow-auto ${dk ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+            {loading ? (
+              <div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Đang tìm…</div>
+            ) : results.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-slate-400">Không tìm thấy kết quả</div>
+            ) : results.map(r => (
+              <button
+                key={r.key}
+                onClick={() => pick(r)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:bg-blue-500/10 ${dk ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}
+              >
+                <r.Icon size={16} className="text-[#004b87] shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className={`block text-sm font-medium truncate ${dk ? 'text-slate-100' : 'text-slate-800'}`}>{r.title}</span>
+                  {r.sub && <span className="block text-xs text-slate-400 truncate">{r.sub}</span>}
+                </span>
+                <span className="text-[11px] text-slate-400 shrink-0">{r.kind}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // --- MAIN APP COMPONENT ---
 export default function App() {
   // true = đang hiện trang giới thiệu (ICTULandingPage); bấm "Vào hệ thống" mới chuyển sang Login/Dashboard.
@@ -247,6 +381,18 @@ export default function App() {
   // = Vi phạm nội quy). Đặt ở đây (không phải bên trong IssuesView) để khi người dùng click vào 1
   // thông báo, ta vừa setActiveTab('issues') vừa chọn đúng tab con tương ứng trước khi màn hình mở ra.
   const [issuesSubTab, setIssuesSubTab] = useState('issues');
+
+  // Chuyển tab từ ô tìm kiếm + mang theo gợi ý lọc (tên SV / tòa nhà). `n` đổi -> view remount đọc lại giá trị đầu;
+  // effect bên dưới xoá gợi ý ngay sau khi view đã đọc, để lần vào tab sau bằng menu không bị lọc sẵn.
+  const [navHint, setNavHint] = useState({ n: 0 });
+  const handleSearchNavigate = (tab, hint = {}) => {
+    setNavHint({ n: Date.now(), ...hint });
+    if (tab === 'issues') setIssuesSubTab('issues');
+    setActiveTab(tab);
+  };
+  useEffect(() => {
+    if (navHint.q || navHint.buildingId) setNavHint({ n: navHint.n });
+  }, [navHint]);
   const [notifications, setNotifications] = useState([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifRef = useRef(null);
@@ -543,16 +689,7 @@ export default function App() {
         <div className="flex-1 flex items-center justify-between gap-2 sm:gap-4 pr-3 sm:pr-6 min-w-0">
           {/* Ô tìm kiếm co giãn theo không gian còn lại thay vì độ rộng cố định w-96 — trước đây
               tràn khung trên màn hình < 700px (xem audit). Ẩn hẳn dưới sm, nhường chỗ cho icon riêng. */}
-          <div className={`hidden sm:flex items-center rounded-full px-4 py-2 w-full max-w-[260px] md:max-w-xs lg:max-w-sm border transition-colors duration-500 ${isDarkMode ? 'bg-slate-700 border-slate-600 focus-within:border-blue-400' : 'bg-slate-100 border-slate-200 focus-within:border-blue-400 focus-within:bg-white'}`}>
-            <Search size={18} className={isDarkMode ? 'text-slate-400' : 'text-slate-400'} />
-            <input type="text" placeholder="Tìm kiếm sinh viên, phòng, sự cố..." className={`bg-transparent border-none outline-none ml-2 w-full text-sm transition-colors duration-500 ${isDarkMode ? 'placeholder-slate-400 text-slate-100' : 'placeholder-slate-400'}`} />
-          </div>
-          <button
-            aria-label="Tìm kiếm"
-            className={`sm:hidden p-2 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'}`}
-          >
-            <Search size={18} />
-          </button>
+          <GlobalSearch isDarkMode={isDarkMode} role={role} onNavigate={handleSearchNavigate} />
           <div className="flex items-center gap-2 sm:gap-4 ml-auto sm:ml-0">
             {/* Thông báo */}
             <div className="relative" ref={notifRef}>
@@ -798,12 +935,12 @@ export default function App() {
         {/* Dynamic Content */}
         <div className={`p-4 sm:p-6 flex-1 overflow-auto transition-colors duration-500 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
           {activeTab === 'dashboard' && <DashboardView isDarkMode={isDarkMode} role={role} />}
-          {activeTab === 'rooms' && <RoomsView isDarkMode={isDarkMode} role={role} session={session} />}
+          {activeTab === 'rooms' && <RoomsView key={navHint.n} initialBuilding={navHint.buildingId} isDarkMode={isDarkMode} role={role} session={session} />}
           {activeTab === 'issues' && <IssuesView isDarkMode={isDarkMode} role={role} session={session} subTab={issuesSubTab} onSubTabChange={setIssuesSubTab} />}
           {activeTab === 'account' && (
             <AccountSettings profile={profile} session={session} isDarkMode={isDarkMode} onProfileUpdate={updateProfileLocally} />
           )}
-          {activeTab === 'students' && <StudentsView isDarkMode={isDarkMode} />}
+          {activeTab === 'students' && <StudentsView key={navHint.n} initialSearch={navHint.q} isDarkMode={isDarkMode} />}
           {activeTab === 'fees' && <FeesView isDarkMode={isDarkMode} />}
           {activeTab === 'contracts' && <ContractsView isDarkMode={isDarkMode} role={role} session={session} />}
         </div>
@@ -1375,8 +1512,8 @@ function DashboardView({ isDarkMode, role }) {
   );
 }
 
-function RoomsView({ isDarkMode, role, session }) {
-  const [buildingFilter, setBuildingFilter] = useState('all');
+function RoomsView({ isDarkMode, role, session, initialBuilding }) {
+  const [buildingFilter, setBuildingFilter] = useState(initialBuilding || 'all');
   const [buildings, setBuildings] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [occupiedMap, setOccupiedMap] = useState({}); // room_id -> số giường đang ở
@@ -3029,8 +3166,8 @@ function ResidencyHistoryModal({ isDarkMode, studentId, studentName, onClose }) 
   );
 }
 
-function StudentsView({ isDarkMode }) {
-  const [search, setSearch] = useState('');
+function StudentsView({ isDarkMode, initialSearch = '' }) {
+  const [search, setSearch] = useState(initialSearch);
   const [genderFilter, setGenderFilter] = useState('all');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
