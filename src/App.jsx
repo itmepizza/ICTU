@@ -4,12 +4,13 @@ import {
   Bot, Search, Bell, X, Plus, LogOut, CheckCircle2, 
   AlertCircle, Info, Send, Loader2, Sparkles, Building2,
   UserCircle2, Moon, Sun, RefreshCw, Phone, Mail, Shield, HeartPulse,
-  PanelLeft, Calculator, Wallet, Menu, History, FileText
+  PanelLeft, Calculator, Wallet, Menu, History, FileText, Database
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import Login from './Login.jsx';
 import ICTULandingPage from './ICTULandingPage.jsx';
 import AccountSettings from './AccountSettings.jsx';
+import BackendView from './BackendView.jsx';
 import SetPasswordModal from './SetPasswordModal.jsx';
 import logoIctu from './assets/logo-ictu.png';
 import {
@@ -651,6 +652,9 @@ export default function App() {
       )}
       <NavItem icon={<FileText />} label="Hợp đồng ở" isActive={activeTab === 'contracts'} onClick={() => setActiveTab('contracts')} isOpen={isOpenState} />
       <NavItem icon={<MessageSquareWarning />} label={role === 'student' ? 'Báo cáo sự cố' : 'Quản lý Phản ánh'} isActive={activeTab === 'issues'} onClick={() => setActiveTab('issues')} isOpen={isOpenState} />
+      {role === 'manager' && (
+        <NavItem icon={<Database />} label="Backend (Supabase)" isActive={activeTab === 'backend'} onClick={() => setActiveTab('backend')} isOpen={isOpenState} />
+      )}
     </>
   );
 
@@ -943,6 +947,7 @@ export default function App() {
           {activeTab === 'students' && <StudentsView key={navHint.n} initialSearch={navHint.q} isDarkMode={isDarkMode} />}
           {activeTab === 'fees' && <FeesView isDarkMode={isDarkMode} />}
           {activeTab === 'contracts' && <ContractsView isDarkMode={isDarkMode} role={role} session={session} />}
+          {activeTab === 'backend' && role === 'manager' && <BackendView isDarkMode={isDarkMode} />}
         </div>
         </main>
       </div>
